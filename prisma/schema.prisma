@@ -126,6 +126,7 @@ model Order {
   updatedAt       DateTime      @updatedAt
   items           OrderItem[]
   statusHistory   OrderStatusHistory[]
+  deliveryTask    DeliveryTask?
 }
 
 model OrderItem {
@@ -170,17 +171,69 @@ model Courier {
   user          User        @relation(fields: [userId], references: [id])
   vehicleType   VehicleType @default(CAR)
   isOnline      Boolean     @default(false)
+  rating        Float       @default(5.0)
+  totalEarnings Decimal     @default(0) @db.Decimal(10, 2)
   orders        Order[]
   shifts        CourierShift[]
+  deliveryTasks DeliveryTask[]
+  earnings      CourierEarning[]
+}
+
+enum ShiftStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+  CANCELLED
 }
 
 model CourierShift {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   courierId String
-  courier   Courier  @relation(fields: [courierId], references: [id])
+  courier   Courier     @relation(fields: [courierId], references: [id])
   startTime DateTime
   endTime   DateTime
-  isPeak    Boolean  @default(false)
+  isPeak    Boolean     @default(false)
+  status    ShiftStatus @default(SCHEDULED)
+  earnings  Decimal     @default(0) @db.Decimal(10, 2)
+  createdAt DateTime    @default(now())
+}
+
+enum DeliveryTaskStatus {
+  ASSIGNED
+  PICKED_UP
+  DELIVERED
+  FAILED
+}
+
+model DeliveryTask {
+  id              String              @id @default(cuid())
+  courierId       String
+  courier         Courier             @relation(fields: [courierId], references: [id])
+  orderId         String              @unique
+  order           Order               @relation(fields: [orderId], references: [id])
+  status          DeliveryTaskStatus  @default(ASSIGNED)
+  pickupTime      DateTime?
+  deliveredTime   DateTime?
+  distanceKm      Float               @default(0)
+  estimatedEta    Int                 @default(0) // in minutes
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+}
+
+model CourierEarning {
+  id              String   @id @default(cuid())
+  courierId       String
+  courier         Courier  @relation(fields: [courierId], references: [id])
+  orderId         String?
+  shiftId         String?
+  baseFee         Decimal  @default(0) @db.Decimal(10, 2)
+  distanceBonus   Decimal  @default(0) @db.Decimal(10, 2)
+  batchBonus      Decimal  @default(0) @db.Decimal(10, 2)
+  peakHourBonus   Decimal  @default(0) @db.Decimal(10, 2)
+  performanceBonus Decimal @default(0) @db.Decimal(10, 2)
+  total           Decimal  @default(0) @db.Decimal(10, 2)
+  type            String   @default("DELIVERY") // DELIVERY, SHIFT_BONUS, ADJUSTMENT
+  createdAt       DateTime @default(now())
 }
 
 enum ReservationStatus {

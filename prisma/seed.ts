@@ -317,6 +317,33 @@ async function main() {
     });
   }
 
+  // 4. Courier accounts
+  const couriers = [
+    { name: 'Ján Kuriér', email: 'jan@jasterka.sk', vehicleType: 'CAR' as const },
+    { name: 'Peter Rozvoz', email: 'peter@jasterka.sk', vehicleType: 'BICYCLE' as const },
+    { name: 'Mária Doručenie', email: 'maria@jasterka.sk', vehicleType: 'SCOOTER' as const },
+  ];
+
+  for (const courierData of couriers) {
+    const existingUser = await prisma.user.findUnique({ where: { email: courierData.email } });
+    if (!existingUser) {
+      await prisma.user.create({
+        data: {
+          email: courierData.email,
+          password: 'courier123',
+          name: courierData.name,
+          role: 'DELIVERY',
+          courierProfile: {
+            create: {
+              vehicleType: courierData.vehicleType,
+              isOnline: false,
+            },
+          },
+        },
+      });
+    }
+  }
+
   console.log('Seed completed successfully.');
 }
 

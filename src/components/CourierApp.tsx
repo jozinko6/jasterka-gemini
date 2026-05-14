@@ -15,7 +15,20 @@ import {
   AlertCircle,
   Loader2,
   X,
-  ArrowLeft
+  ArrowLeft,
+  DollarSign,
+  Calendar,
+  TrendingUp,
+  Star,
+  BarChart3,
+  List,
+  Plus,
+  Route,
+  MapIcon,
+  Bell,
+  BellRing,
+  ThumbsUp,
+  ThumbsDown
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import React from 'react';
@@ -75,7 +88,17 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
   const [loginPin, setLoginPin] = useState('');
   const [loginError, setLoginError] = useState('');
   const [isOnline, setIsOnline] = useState(false);
+  const [activeTab, setActiveTab] = useState<'orders' | 'earnings' | 'shifts'>('orders');
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Earnings & Shifts state
+  const [earningsSummary, setEarningsSummary] = useState<{ totalEarnings: number; thisWeek: number; today: number; deliveriesCount: number } | null>(null);
+  const [earningsHistory, setEarningsHistory] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [deliveryTasks, setDeliveryTasks] = useState<any[]>([]);
+  const [isLoadingEarnings, setIsLoadingEarnings] = useState(false);
+  const [isLoadingShifts, setIsLoadingShifts] = useState(false);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
 
   // Load courier from localStorage
   useEffect(() => {
@@ -92,6 +115,47 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
     }
     setIsLoading(false);
   }, []);
+
+  // Fetch earnings data
+  const fetchEarnings = async () => {
+    if (!courier) return;
+    setIsLoadingEarnings(true);
+    try {
+      const [summaryRes, historyRes, tasksRes] = await Promise.all([
+        fetch(`/api/admin/couriers/${courier.id}/earnings/summary`),
+        fetch(`/api/admin/couriers/${courier.id}/earnings`),
+        fetch(`/api/admin/couriers/${courier.id}/tasks`),
+      ]);
+      if (summaryRes.ok) setEarningsSummary(await summaryRes.json());
+      if (historyRes.ok) setEarningsHistory(await historyRes.json());
+      if (tasksRes.ok) setDeliveryTasks(await tasksRes.json());
+    } catch (err) {
+      console.error('Failed to fetch earnings:', err);
+    } finally {
+      setIsLoadingEarnings(false);
+    }
+  };
+
+  // Fetch shifts data
+  const fetchShifts = async () => {
+    if (!courier) return;
+    setIsLoadingShifts(true);
+    try {
+      const res = await fetch(`/api/admin/couriers/${courier.id}/shifts`);
+      if (res.ok) setShifts(await res.json());
+    } catch (err) {
+      console.error('Failed to fetch shifts:', err);
+    } finally {
+      setIsLoadingShifts(false);
+    }
+  };
+
+  // Fetch data when tab changes
+  useEffect(() => {
+    if (!courier) return;
+    if (activeTab === 'earnings') fetchEarnings();
+    if (activeTab === 'shifts') fetchShifts();
+  }, [activeTab, courier]);
 
   // Poll orders when courier is logged in
   useEffect(() => {
@@ -318,7 +382,7 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
       </div>
 
       {/* Content */}
-      <div className="max-w-lg mx-auto px-4 py-6 pb-24">
+      <div className="max-w-lg mx-auto px-4 py-6 pb-28">
         {/* Error */}
         {error && (
           <div className="mb-4 p-4 rounded-2xl bg-red-50 text-red-600 text-sm font-medium flex items-center gap-3">
@@ -330,70 +394,268 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
           </div>
         )}
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
-            <div className="text-3xl font-black text-gastro-dark-green">{orders.length}</div>
-            <div className="text-xs text-gastro-ink/40 uppercase tracking-wider mt-1">Aktívne objednávky</div>
-          </div>
-          <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
-            <div className="text-3xl font-black text-gastro-dark-green">
-              {orders.filter((o) => o.status === 'DELIVERING').length}
+        {/* ORDERS TAB */}
+        {activeTab === 'orders' && (
+          <>
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                <div className="text-3xl font-black text-gastro-dark-green">{orders.length}</div>
+                <div className="text-xs text-gastro-ink/40 uppercase tracking-wider mt-1">Aktívne objednávky</div>
+              </div>
+              <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                <div className="text-3xl font-black text-gastro-dark-green">
+                  {orders.filter((o) => o.status === 'DELIVERING').length}
+                </div>
+                <div className="text-xs text-gastro-ink/40 uppercase tracking-wider mt-1">Práve na ceste</div>
+              </div>
             </div>
-            <div className="text-xs text-gastro-ink/40 uppercase tracking-wider mt-1">Práve na ceste</div>
-          </div>
-        </div>
 
-        {/* Orders List */}
-        {orders.length === 0 ? (
-          <div className="text-center py-16">
-            <Package className="w-16 h-16 mx-auto text-gastro-ink/20 mb-4" />
-            <h2 className="text-xl font-black text-gastro-ink/40">Žiadne aktívne objednávky</h2>
-            <p className="text-sm text-gastro-ink/30 mt-2">Počkajte na priradenie objednávky administrátorom.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {orders.map((order) => (
-              <motion.button
-                key={order.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={() => setSelectedOrder(order)}
-                className="w-full text-left bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm hover:shadow-md transition-all"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <div className="text-xs text-gastro-ink/40 uppercase tracking-wider">
-                      #{order.id.slice(-6)} • {formatTime(order.createdAt)}
+            {/* Orders List */}
+            {orders.length === 0 ? (
+              <div className="text-center py-16">
+                <Package className="w-16 h-16 mx-auto text-gastro-ink/20 mb-4" />
+                <h2 className="text-xl font-black text-gastro-ink/40">Žiadne aktívne objednávky</h2>
+                <p className="text-sm text-gastro-ink/30 mt-2">Počkajte na priradenie objednávky administrátorom.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {orders.map((order) => (
+                  <motion.button
+                    key={order.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    onClick={() => setSelectedOrder(order)}
+                    className="w-full text-left bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm hover:shadow-md transition-all"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="text-xs text-gastro-ink/40 uppercase tracking-wider">
+                          #{order.id.slice(-6)} • {formatTime(order.createdAt)}
+                        </div>
+                        <div className="font-black text-gastro-dark-green mt-1">{order.customerName}</div>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-600'}`}>
+                        {STATUS_LABELS[order.status] || order.status}
+                      </span>
                     </div>
-                    <div className="font-black text-gastro-dark-green mt-1">{order.customerName}</div>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${STATUS_COLORS[order.status] || 'bg-gray-100 text-gray-600'}`}>
-                    {STATUS_LABELS[order.status] || order.status}
-                  </span>
-                </div>
 
-                {order.deliveryAddress && (
-                  <div className="flex items-start gap-2 text-sm text-gastro-ink/60 mb-3">
-                    <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-gastro-orange" />
-                    <span>{order.deliveryAddress}</span>
-                  </div>
-                )}
+                    {order.deliveryAddress && (
+                      <div className="flex items-start gap-2 text-sm text-gastro-ink/60 mb-3">
+                        <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-gastro-orange" />
+                        <span>{order.deliveryAddress}</span>
+                      </div>
+                    )}
 
-                <div className="flex items-center justify-between pt-3 border-t border-gastro-beige/20">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Package className="w-4 h-4 text-gastro-ink/40" />
-                    <span className="text-gastro-ink/60">{order.items?.length || 0} položiek</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="font-black text-gastro-dark-green">{Number(order.total).toFixed(2)} €</span>
-                    <ChevronRight className="w-4 h-4 text-gastro-ink/30" />
-                  </div>
-                </div>
-              </motion.button>
-            ))}
-          </div>
+                    <div className="flex items-center justify-between pt-3 border-t border-gastro-beige/20">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Package className="w-4 h-4 text-gastro-ink/40" />
+                        <span className="text-gastro-ink/60">{order.items?.length || 0} položiek</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="font-black text-gastro-dark-green">{Number(order.total).toFixed(2)} €</span>
+                        <ChevronRight className="w-4 h-4 text-gastro-ink/30" />
+                      </div>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </>
         )}
+
+        {/* EARNINGS TAB */}
+        {activeTab === 'earnings' && (
+          <>
+            {isLoadingEarnings ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-10 h-10 animate-spin text-gastro-dark-green" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Earnings Summary Cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <DollarSign className="w-4 h-4 text-green-500" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gastro-ink/40">Dnes</span>
+                    </div>
+                    <div className="text-2xl font-black text-gastro-dark-green">
+                      {earningsSummary?.today?.toFixed(2) || '0.00'} €
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <TrendingUp className="w-4 h-4 text-blue-500" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gastro-ink/40">Tento Týždeň</span>
+                    </div>
+                    <div className="text-2xl font-black text-gastro-dark-green">
+                      {earningsSummary?.thisWeek?.toFixed(2) || '0.00'} €
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BarChart3 className="w-4 h-4 text-gastro-orange" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gastro-ink/40">Celkovo</span>
+                    </div>
+                    <div className="text-2xl font-black text-gastro-dark-green">
+                      {earningsSummary?.totalEarnings?.toFixed(2) || '0.00'} €
+                    </div>
+                  </div>
+                  <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Package className="w-4 h-4 text-gastro-ink/40" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-gastro-ink/40">Doručení</span>
+                    </div>
+                    <div className="text-2xl font-black text-gastro-dark-green">
+                      {earningsSummary?.deliveriesCount || 0}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Delivery Tasks History */}
+                <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                  <h3 className="text-sm font-bold text-gastro-dark-green mb-4 flex items-center gap-2">
+                    <List className="w-4 h-4" />
+                    História doručení
+                  </h3>
+                  {deliveryTasks.length === 0 ? (
+                    <p className="text-xs text-gastro-ink/40 italic text-center py-6">Zatiaľ žiadne doručenia</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {deliveryTasks.map((task: any) => (
+                        <div key={task.id} className="flex items-center justify-between py-2 border-b border-gastro-beige/10 last:border-0">
+                          <div>
+                            <div className="text-xs font-bold text-gastro-dark-green">
+                              #{task.orderId?.slice(-6) || 'N/A'}
+                            </div>
+                            <div className="text-[10px] text-gastro-ink/40">
+                              {task.status === 'DELIVERED' ? '✅ Doručené' : task.status === 'PICKED_UP' ? '📦 Vyzdvihnuté' : '📋 Priradené'}
+                            </div>
+                          </div>
+                          <div className="text-xs text-gastro-ink/40">
+                            {task.createdAt ? formatDate(task.createdAt) : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Earnings History */}
+                <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                  <h3 className="text-sm font-bold text-gastro-dark-green mb-4 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4" />
+                    Výplaty
+                  </h3>
+                  {earningsHistory.length === 0 ? (
+                    <p className="text-xs text-gastro-ink/40 italic text-center py-6">Zatiaľ žiadne výplaty</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {earningsHistory.map((earning: any) => (
+                        <div key={earning.id} className="flex items-center justify-between py-2 border-b border-gastro-beige/10 last:border-0">
+                          <div>
+                            <div className="text-xs font-bold text-gastro-dark-green">
+                              {Number(earning.totalAmount).toFixed(2)} €
+                            </div>
+                            <div className="text-[10px] text-gastro-ink/40">
+                              {earning.baseFee > 0 && `Základ ${Number(earning.baseFee).toFixed(2)}€`}
+                              {earning.distanceBonus > 0 && ` + Vzdialenosť ${Number(earning.distanceBonus).toFixed(2)}€`}
+                              {earning.batchBonus > 0 && ` + Batch ${Number(earning.batchBonus).toFixed(2)}€`}
+                              {earning.peakHourBonus > 0 && ` + Peak ${Number(earning.peakHourBonus).toFixed(2)}€`}
+                              {earning.performanceBonus > 0 && ` + Výkon ${Number(earning.performanceBonus).toFixed(2)}€`}
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-gastro-ink/40">
+                            {earning.createdAt ? formatDate(earning.createdAt) : ''}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* SHIFTS TAB */}
+        {activeTab === 'shifts' && (
+          <>
+            {isLoadingShifts ? (
+              <div className="flex items-center justify-center py-20">
+                <Loader2 className="w-10 h-10 animate-spin text-gastro-dark-green" />
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-white rounded-2xl p-5 border border-gastro-beige/20 shadow-sm">
+                  <h3 className="text-sm font-bold text-gastro-dark-green mb-4 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />
+                    Moje smeny
+                  </h3>
+                  {shifts.length === 0 ? (
+                    <p className="text-xs text-gastro-ink/40 italic text-center py-6">Zatiaľ žiadne smeny</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {shifts.map((shift: any) => (
+                        <div key={shift.id} className="flex items-center justify-between py-3 border-b border-gastro-beige/10 last:border-0">
+                          <div>
+                            <div className="text-xs font-bold text-gastro-dark-green">
+                              {shift.startTime ? formatDate(shift.startTime) : 'N/A'}
+                            </div>
+                            <div className="text-[10px] text-gastro-ink/40">
+                              {shift.endTime ? `Do ${formatTime(shift.endTime)}` : 'Prebieha'}
+                            </div>
+                          </div>
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${
+                            shift.status === 'ACTIVE' ? 'bg-green-100 text-green-700' :
+                            shift.status === 'COMPLETED' ? 'bg-blue-100 text-blue-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {shift.status === 'ACTIVE' ? 'Aktívna' : shift.status === 'COMPLETED' ? 'Dokončená' : 'Naplánovaná'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Bottom Tab Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gastro-beige/20">
+        <div className="max-w-lg mx-auto flex items-center justify-around h-16 px-4">
+          <button
+            onClick={() => setActiveTab('orders')}
+            className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl transition-all ${
+              activeTab === 'orders' ? 'text-gastro-dark-green' : 'text-gastro-ink/30'
+            }`}
+          >
+            <Package className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Objednávky</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('earnings')}
+            className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl transition-all ${
+              activeTab === 'earnings' ? 'text-gastro-dark-green' : 'text-gastro-ink/30'
+            }`}
+          >
+            <DollarSign className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Zárobok</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('shifts')}
+            className={`flex flex-col items-center gap-0.5 px-4 py-2 rounded-xl transition-all ${
+              activeTab === 'shifts' ? 'text-gastro-dark-green' : 'text-gastro-ink/30'
+            }`}
+          >
+            <Calendar className="w-5 h-5" />
+            <span className="text-[9px] font-black uppercase tracking-wider">Smeny</span>
+          </button>
+        </div>
       </div>
 
       {/* Order Detail Modal */}
