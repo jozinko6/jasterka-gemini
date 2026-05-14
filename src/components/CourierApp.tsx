@@ -83,6 +83,7 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
   const [selectedOrder, setSelectedOrder] = useState<CourierOrder | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [showLogin, setShowLogin] = useState(true);
   const [loginName, setLoginName] = useState('');
   const [loginPin, setLoginPin] = useState('');
@@ -237,6 +238,7 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
   const handleUpdateStatus = async (orderId: string, newStatus: string) => {
     setIsUpdating(true);
     setError('');
+    setSuccessMessage('');
     try {
       const res = await fetch(`/api/admin/orders/${orderId}/status`, {
         method: 'PATCH',
@@ -250,6 +252,11 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
         if (selectedOrder?.id === orderId) {
           setSelectedOrder((prev) => prev ? { ...prev, status: newStatus } : null);
         }
+        // Show success message
+        const statusLabel = STATUS_LABELS[newStatus] || newStatus;
+        setSuccessMessage(`Stav zmenený na "${statusLabel}"`);
+        // Auto-hide success message after 3 seconds
+        setTimeout(() => setSuccessMessage(''), 3000);
       } else {
         setError('Chyba pri aktualizácii stavu');
       }
@@ -383,6 +390,14 @@ export default function CourierApp({ onLogout }: { onLogout: () => void }) {
 
       {/* Content */}
       <div className="max-w-lg mx-auto px-4 py-6 pb-28">
+        {/* Success Message */}
+        {successMessage && (
+          <div className="mb-4 p-4 rounded-2xl bg-green-50 text-green-700 text-sm font-medium flex items-center gap-3 border border-green-200">
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+            {successMessage}
+          </div>
+        )}
+
         {/* Error */}
         {error && (
           <div className="mb-4 p-4 rounded-2xl bg-red-50 text-red-600 text-sm font-medium flex items-center gap-3">

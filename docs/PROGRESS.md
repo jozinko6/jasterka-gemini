@@ -33,6 +33,13 @@
 
 **Build status:** ✅ SUCCESS.
 
+## [2026-05-15] - Fáza 40: Oprava "Potvrdiť objednávku" v CourierApp
+- [x] Diagnostikovaný problém: Po kliknutí na "Potvrdiť objednávku" sa status zmenil z NEW na CONFIRMED, ale chýbala vizuálna spätná väzba - tlačidlo zmizlo bez akéhokoľvek indikátora úspechu.
+- [x] Pridaná successMessage notifikácia (zelený banner) po úspešnej zmene stavu objednávky.
+- [x] Verifikácia buildu.
+
+**Build status:** ✅ SUCCESS.
+
 ## [2026-05-14] - Fáza 38b: Oprava TypeScript chýb v server.ts
 - [x] Oprava `rating` property - chýbajúci field v Prisma type intersection (použité `as any`).
 - [x] Oprava `deliveryTasks` → `deliveryTask` model name v Prisma query (model je `DeliveryTask`, nie `DeliveryTasks`).
