@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gastro-dark-green: #1b2610;
+  --color-gastro-olive: #3a4d2c;
+  --color-gastro-cream: #fdfaf5;
+  --color-gastro-beige: #e2d1b0;
+  --color-gastro-orange: #f97316;
+  --color-gastro-ink: #1a1917;
+
+  --font-serif: "Georgia", serif;
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  @apply bg-gastro-cream text-gastro-ink font-sans;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, .serif {
+  @apply font-serif;
+}

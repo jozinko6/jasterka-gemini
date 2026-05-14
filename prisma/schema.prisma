@@ -1,0 +1,216 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  KITCHEN
+  DELIVERY
+  CUSTOMER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  name          String?
+  role          UserRole  @default(CUSTOMER)
+  points        Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  orders        Order[]
+  courierProfile Courier?
+  reservations  Reservation[]
+  loyaltyHistory LoyaltyTransaction[]
+}
+
+model Coupon {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  discount    Decimal   @db.Decimal(10, 2)
+  type        CouponType @default(FIXED) // FIXED or PERCENT
+  minOrder    Decimal?  @db.Decimal(10, 2)
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+enum CouponType {
+  FIXED
+  PERCENT
+}
+
+model LoyaltyTransaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Int      // Positive for earned, negative for spent
+  type      String   // "EARNED", "SPENT", "REFUNDED"
+  orderId   String?
+  createdAt DateTime @default(now())
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  order     Int        @default(0)
+  items     MenuItem[]
+}
+
+model MenuItem {
+  id           String    @id @default(cuid())
+  categoryId   String
+  category     Category  @relation(fields: [categoryId], references: [id])
+  name         String
+  description  String?
+  price        Decimal   @db.Decimal(10, 2)
+  allergens    String?
+  tag          String?
+  image        String?
+  isPizza      Boolean   @default(false)
+  isActive     Boolean   @default(true)
+  orderItems   OrderItem[]
+  options      MenuItemOption[]
+}
+
+model MenuItemOption {
+  id         String   @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  name       String
+  price      Decimal  @db.Decimal(10, 2)
+}
+
+enum OrderStatus {
+  NEW
+  ACCEPTED
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  REJECTED
+}
+
+enum OrderType {
+  PICKUP
+  DELIVERY
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id])
+  status          OrderStatus   @default(NEW)
+  type            OrderType
+  total           Decimal       @db.Decimal(10, 2)
+  deliveryFee     Decimal       @db.Decimal(10, 2) @default(0)
+  deliveryAddress String?
+  deliveryZoneId  String?
+  deliveryZone    DeliveryZone? @relation(fields: [deliveryZoneId], references: [id])
+  courierId       String?
+  courier         Courier?      @relation(fields: [courierId], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity   Int
+  price      Decimal  @db.Decimal(10, 2)
+  note       String?
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  createdAt DateTime    @default(now())
+  note      String?
+}
+
+model DeliveryZone {
+  id        String   @id @default(cuid())
+  name      String
+  fee       Decimal  @db.Decimal(10, 2)
+  minOrder  Decimal  @db.Decimal(10, 2)
+  color     String?
+  orders    Order[]
+}
+
+enum VehicleType {
+  BICYCLE
+  CAR
+  SCOOTER
+}
+
+model Courier {
+  id            String      @id @default(cuid())
+  userId        String      @unique
+  user          User        @relation(fields: [userId], references: [id])
+  vehicleType   VehicleType @default(CAR)
+  isOnline      Boolean     @default(false)
+  orders        Order[]
+  shifts        CourierShift[]
+}
+
+model CourierShift {
+  id        String   @id @default(cuid())
+  courierId String
+  courier   Courier  @relation(fields: [courierId], references: [id])
+  startTime DateTime
+  endTime   DateTime
+  isPeak    Boolean  @default(false)
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  NO_SHOW
+  COMPLETED
+}
+
+model Reservation {
+  id        String            @id @default(cuid())
+  userId    String?
+  user      User?             @relation(fields: [userId], references: [id])
+  name      String
+  email     String
+  phone     String
+  date      DateTime
+  guests    Int
+  note      String?
+  status    ReservationStatus @default(PENDING)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
+model RestaurantSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model DailyMenu {
+  id        String   @id @default(cuid())
+  date      DateTime @unique
+  content   String   // Markdown or JSON representation of the daily menu
+  createdAt DateTime @default(now())
+}
