@@ -1,10 +1,12 @@
-import { ShoppingCart, User, Menu, Phone, MapPin, Clock, X, Plus, Minus, Trash2, ShieldCheck, Loader2, Navigation, CheckCircle2 } from 'lucide-react';
+import { ShoppingCart, User, Menu, Phone, MapPin, Clock, X, Plus, Minus, Trash2, ShieldCheck, Loader2, Navigation, CheckCircle2, Truck } from 'lucide-react';
+
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect } from 'react';
 import { APIProvider, Map, AdvancedMarker, Pin, useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useCartStore } from './store/useCartStore';
 import AdminDashboard from './components/AdminDashboard';
 import AdminLogin from './components/AdminLogin';
+import CourierApp from './components/CourierApp';
 
 const API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(API_KEY) && API_KEY !== 'YOUR_API_KEY';
@@ -124,6 +126,7 @@ export default function App() {
   const [couponError, setCouponError] = useState('');
   const [dailyMenu, setDailyMenu] = useState<any>(null);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const [isCourierMode, setIsCourierMode] = useState(false);
 
   const [submittedAddress, setSubmittedAddress] = useState<string | null>(null);
 
@@ -786,7 +789,9 @@ export default function App() {
 
   return (
     <APIProvider apiKey={API_KEY || 'no-key'}>
-      {view === 'admin' ? (
+      {isCourierMode ? (
+        <CourierApp onLogout={() => setIsCourierMode(false)} />
+      ) : view === 'admin' ? (
         !isAdminAuthenticated ? (
           <AdminLogin 
             onLogin={handleAdminLogin} 
@@ -1943,12 +1948,20 @@ export default function App() {
             <p className="text-sm text-gastro-ink/60 leading-relaxed max-w-sm mb-6">
               Denné menu, pizza a poctivé jedlá v Hlohovci. Objednajte si cez web, zavolajte alebo sa nechajte navigovať priamo k nám.
             </p>
-            <button 
-              onClick={() => setView('admin')}
-              className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gastro-ink/25 hover:text-gastro-dark-green focus:outline-none focus:ring-2 focus:ring-gastro-orange transition-colors"
-            >
-              <ShieldCheck className="w-3 h-3" /> Admin prístup
-            </button>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setView('admin')}
+                  className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gastro-ink/25 hover:text-gastro-dark-green focus:outline-none focus:ring-2 focus:ring-gastro-orange transition-colors"
+                >
+                  <ShieldCheck className="w-3 h-3" /> Admin prístup
+                </button>
+                <button 
+                  onClick={() => setIsCourierMode(true)}
+                  className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gastro-ink/25 hover:text-gastro-dark-green focus:outline-none focus:ring-2 focus:ring-gastro-orange transition-colors"
+                >
+                  <Truck className="w-3 h-3" /> Kuriér
+                </button>
+              </div>
           </div>
           <div className="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-6 text-sm">
             <div>
