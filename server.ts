@@ -6,7 +6,9 @@ import {
   fallbackSettings,
   fallbackDailyMenu,
   setFallbackDailyMenu,
+  fallbackCouriers,
   type FallbackMenuItem,
+  type FallbackCourier,
 } from "./src/data/fallbackData.js";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
@@ -832,6 +834,160 @@ export async function createApp(options: { serveClient?: boolean } = {}) {
     } catch (error) {
       console.error(error);
       res.status(500).json({ error: "Failed to seed menu" });
+    }
+  });
+
+  // -- COURIER MANAGEMENT --
+
+  // Get all couriers
+  app.get("/api/admin/couriers", async (req, res) => {
+    try {
+      if (!hasDatabase) {
+        return res.json(fallbackCouriers);
+      }
+
+      const couriers = await prisma.courier.findMany({
+        include: {
+          user: { select: { name: true, email: true } },
+          orders: {
+            where: { status: { notIn: ["COMPLETED", "REJECTED"] } },
+            select: { id: true },
+          },
+        },
+      });
+
+      const result = couriers.map((c) => ({
+        id: c.id,
+        name: c.user?.name || "Neznámy",
+        phone: c.user?.email || "",
+        vehicleType: c.vehicleType,
+        isOnline: c.isOnline,
+        activeOrdersCount: c.orders.length,
+      }));
+
+      res.json(result);
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to fetch couriers" });
+    }
+  });
+
+  // Create a courier
+  app.post("/api/admin/couriers", async (req, res) => {
+    try {
+      const { name, phone, vehicleType } = req.body;
+      if (!hasDatabase) {
+        const courier: FallbackCourier = {
+          id: `courier-${Date.now()}`,
+          name,
+          phone,
+          vehicleType: vehicleType || "CAR",
+          isOnline: false,
+          activeOrdersCount: 0,
+        };
+        fallbackCouriers.push(courier);
+        return res.status(201).json(courier);
+      }
+
+      // Create user + courier profile
+      const user = await prisma.user.create({
+        data: {
+          email: `courier-${Date.now()}@jasterka.sk`,
+          password: "temporary",
+          name,
+          role: "DELIVERY",
+          courierProfile: {
+            create: {
+              vehicleType: vehicleType || "CAR",
+              isOnline: false,
+            },
+          },
+        },
+        include: { courierProfile: true },
+      });
+
+      res.status(201).json({
+        id: user.courierProfile!.id,
+        name: user.name,
+        phone: user.email,
+        vehicleType: user.courierProfile!.vehicleType,
+        isOnline: user.courierProfile!.isOnline,
+        activeOrdersCount: 0,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ error: "Failed to create courier" });
+    }
+  });
+
+  // Toggle courier online status
+  app.patch("/api/admin/couriers/:id/toggle", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!hasDatabase) {
+        const courier = fallbackCouriers.find((c) => c.id === id);
+        if (!courier) return res.status(404).json({ error: "Courier not found" });
+        courier.isOnline = !courier.isOnline;
+        return res.json(courier);
+      }
+
+      const courier = await prisma.courier.findUnique({ where: { id } });
+      if (!courier) return res.status(404).json({ error: "Courier not found" });
+
+      const updated = await prisma.courier.update({
+        where: { id },
+        data: { isOnline: !courier.isOnline },
+      });
+
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to toggle courier status" });
+    }
+  });
+
+  // Delete a courier
+  app.delete("/api/admin/couriers/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!hasDatabase) {
+        const idx = fallbackCouriers.findIndex((c) => c.id === id);
+        if (idx === -1) return res.status(404).json({ error: "Courier not found" });
+        fallbackCouriers.splice(idx, 1);
+        return res.status(204).send();
+      }
+
+      const courier = await prisma.courier.findUnique({ where: { id }, include: { user: true } });
+      if (!courier) return res.status(404).json({ error: "Courier not found" });
+
+      await prisma.courier.delete({ where: { id } });
+      if (courier.user) {
+        await prisma.user.delete({ where: { id: courier.user.id } });
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete courier" });
+    }
+  });
+
+  // Assign courier to order
+  app.patch("/api/admin/orders/:id/assign-courier", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { courierId } = req.body;
+
+      if (!hasDatabase) {
+        return res.json({ id, courierId });
+      }
+
+      const order = await prisma.order.update({
+        where: { id },
+        data: { courierId },
+      });
+
+      res.json(order);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to assign courier" });
     }
   });
 

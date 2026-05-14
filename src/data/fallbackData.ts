@@ -132,3 +132,19 @@ export function setFallbackDailyMenu(content: string, date: string, items = fall
     items,
   };
 }
+
+// Courier fallback data
+export interface FallbackCourier {
+  id: string;
+  name: string;
+  phone: string;
+  vehicleType: string;
+  isOnline: boolean;
+  activeOrdersCount: number;
+}
+
+export let fallbackCouriers: FallbackCourier[] = [
+  { id: "courier-1", name: "Ján Kuriér", phone: "0900 111 222", vehicleType: "CAR", isOnline: true, activeOrdersCount: 0 },
+  { id: "courier-2", name: "Peter Doručovateľ", phone: "0900 333 444", vehicleType: "SCOOTER", isOnline: true, activeOrdersCount: 0 },
+  { id: "courier-3", name: "Mária Rýchla", phone: "0900 555 666", vehicleType: "BICYCLE", isOnline: false, activeOrdersCount: 0 },
+];

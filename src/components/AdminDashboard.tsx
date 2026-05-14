@@ -22,7 +22,11 @@ import {
   Calendar,
   Settings2,
   UtensilsCrossed,
-  Upload
+  Upload,
+  Truck,
+  Wifi,
+  WifiOff,
+  Trash2
 } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import React from 'react';
@@ -51,6 +55,7 @@ interface Order {
   customerPhone?: string | null;
   deliveryCity?: string | null;
   deliveryFee?: string | number;
+  courierId?: string | null;
   items: {
     quantity: number;
     itemName?: string | null;
@@ -59,6 +64,7 @@ interface Order {
     } | null;
   }[];
 }
+
 
 function MenuItemModal({ categories, item, onClose, onSuccess }: { categories: any[], item?: any, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({
@@ -386,7 +392,7 @@ const LogisticsMap = ({ orders }: { orders: Order[] }) => {
 };
 
 export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'daily' | 'stats' | 'logistics' | 'reservations' | 'settings'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'menu' | 'daily' | 'stats' | 'logistics' | 'reservations' | 'settings' | 'couriers'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
   const [reservations, setReservations] = useState<any[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -429,6 +435,107 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isAddingItem, setIsAddingItem] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+
+  // Courier state
+  interface Courier {
+    id: string;
+    name: string;
+    phone: string;
+    vehicleType: string;
+    isOnline: boolean;
+    activeOrdersCount: number;
+  }
+  const [couriers, setCouriers] = useState<Courier[]>([]);
+  const [isAddingCourier, setIsAddingCourier] = useState(false);
+  const [isAddingCourierSubmitting, setIsAddingCourierSubmitting] = useState(false);
+  const [newCourierName, setNewCourierName] = useState('');
+  const [newCourierPhone, setNewCourierPhone] = useState('');
+  const [newCourierVehicle, setNewCourierVehicle] = useState('CAR');
+
+  // Courier API functions
+  const loadCouriers = async () => {
+    try {
+      const res = await fetch('/api/admin/couriers');
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setCouriers(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch couriers:', err);
+    }
+  };
+
+  const toggleCourierStatus = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/couriers/${id}/toggle`, { method: 'PATCH' });
+      if (res.ok) {
+        loadCouriers();
+      }
+    } catch (err) {
+      console.error('Failed to toggle courier status:', err);
+    }
+  };
+
+  const deleteCourier = async (id: string) => {
+    if (!confirm('Naozaj chcete odstrániť tohto kuriéra?')) return;
+    try {
+      const res = await fetch(`/api/admin/couriers/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadCouriers();
+      }
+    } catch (err) {
+      console.error('Failed to delete courier:', err);
+    }
+  };
+
+  const handleAddCourier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAddingCourierSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/couriers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newCourierName,
+          phone: newCourierPhone,
+          vehicleType: newCourierVehicle,
+        }),
+      });
+      if (res.ok) {
+        setNewCourierName('');
+        setNewCourierPhone('');
+        setNewCourierVehicle('CAR');
+        setIsAddingCourier(false);
+        loadCouriers();
+      }
+    } catch (err) {
+      console.error('Failed to add courier:', err);
+    } finally {
+      setIsAddingCourierSubmitting(false);
+    }
+  };
+
+  const assignCourierToOrder = async (orderId: string, courierId: string) => {
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/assign-courier`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courierId: courierId || null }),
+      });
+      if (res.ok) {
+        loadOrders();
+        loadCouriers();
+      }
+    } catch (err) {
+      console.error('Failed to assign courier:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'couriers') {
+      loadCouriers();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'orders') {
@@ -651,6 +758,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             { id: 'orders', label: 'Objednávky', icon: Package },
             { id: 'daily', label: 'Denné Menu', icon: UtensilsCrossed },
             { id: 'reservations', label: 'Rezervácie', icon: Calendar },
+            { id: 'couriers', label: 'Kuriéri', icon: Truck },
             { id: 'logistics', label: 'Logistika', icon: Navigation },
             { id: 'menu', label: 'Správa Menu', icon: Package },
             { id: 'stats', label: 'Štatistiky', icon: BarChart3 },
@@ -691,7 +799,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                activeTab === 'menu' ? 'Menu' : 
                activeTab === 'daily' ? 'Denná Ponuka' : 
                activeTab === 'stats' ? 'Analytika' : 
-               activeTab === 'reservations' ? 'Rezervácie' : 'Systém'}
+               activeTab === 'reservations' ? 'Rezervácie' : 
+               activeTab === 'couriers' ? 'Kuriéri' : 'Systém'}
             </h1>
             <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-gastro-olive/5 rounded-full border border-gastro-olive/10">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
@@ -972,6 +1081,199 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                       </div>
                     </div>
                   )}
+                  {activeTab === 'couriers' && (
+                    <div className="space-y-10">
+                      <div className="flex justify-between items-center mb-8">
+                        <div>
+                          <h2 className="text-xl font-bold uppercase tracking-tight">Správa Kuriérov</h2>
+                          <p className="text-[10px] text-gastro-ink/40 uppercase font-black tracking-widest mt-1">Pridávanie, priraďovanie a sledovanie doručovateľov</p>
+                        </div>
+                        <button 
+                          onClick={() => setIsAddingCourier(true)}
+                          className="bg-gastro-dark-green text-white px-6 py-3 rounded-full font-bold text-sm shadow-lg shadow-gastro-dark-green/20 flex items-center gap-2 hover:scale-105 transition-all"
+                        >
+                          <Plus className="w-4 h-4" /> Pridať Kuriéra
+                        </button>
+                      </div>
+
+                      {/* Courier Stats */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        {[
+                          { label: 'Celkom Kuriérov', value: couriers.length, icon: Truck, color: 'text-gastro-dark-green' },
+                          { label: 'Online', value: couriers.filter(c => c.isOnline).length, icon: Wifi, color: 'text-green-500' },
+                          { label: 'Offline', value: couriers.filter(c => !c.isOnline).length, icon: WifiOff, color: 'text-red-400' },
+                          { label: 'Aktívne Dovozy', value: couriers.reduce((sum, c) => sum + c.activeOrdersCount, 0), icon: Navigation, color: 'text-blue-500' },
+                        ].map((stat) => (
+                          <div key={stat.label} className="bg-white p-6 rounded-3xl border border-gastro-beige/10 shadow-sm">
+                            <div className="flex items-center justify-between mb-2">
+                              <stat.icon className={`w-5 h-5 ${stat.color}`} />
+                            </div>
+                            <div className="text-2xl font-black tracking-tighter">{stat.value}</div>
+                            <div className="text-xs font-bold text-gastro-ink/50 mt-1 uppercase tracking-widest">{stat.label}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Courier List */}
+                      <div className="bg-white rounded-[32px] border border-gastro-beige/10 shadow-sm overflow-hidden">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-gastro-cream/10 border-b border-gastro-beige/20">
+                              {['Meno', 'Telefón', 'Vozidlo', 'Status', 'Aktívne Dovozy', 'Akcie'].map((h) => (
+                                <th key={h} className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-gastro-ink/40">
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {couriers.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="px-6 py-20 text-center text-xs font-bold text-gastro-ink/30 uppercase tracking-widest">
+                                  Žiadni kuriéri. Pridajte prvého kuriéra.
+                                </td>
+                              </tr>
+                            ) : couriers.map((courier) => (
+                              <tr key={courier.id} className="border-b border-gastro-beige/10 hover:bg-gastro-cream/5 transition-colors">
+                                <td className="px-6 py-5">
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm ${courier.isOnline ? 'bg-green-100 text-green-700' : 'bg-gastro-ink/5 text-gastro-ink/30'}`}>
+                                      {courier.name.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="font-bold text-sm">{courier.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-5 text-sm font-bold text-gastro-ink/60">{courier.phone}</td>
+                                <td className="px-6 py-5">
+                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full border text-[10px] font-black uppercase tracking-widest bg-gastro-ink/5 border-gastro-ink/10 text-gastro-ink/50">
+                                    {courier.vehicleType === 'CAR' ? '🚗 Auto' : courier.vehicleType === 'SCOOTER' ? '🛵 Skúter' : '🚲 Bicykel'}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-5">
+                                  <button
+                                    onClick={() => toggleCourierStatus(courier.id)}
+                                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest transition-all ${
+                                      courier.isOnline 
+                                        ? 'bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-500/20' 
+                                        : 'bg-red-500/5 text-red-400 border-red-500/10 hover:bg-red-500/10'
+                                    }`}
+                                  >
+                                    {courier.isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                                    {courier.isOnline ? 'Online' : 'Offline'}
+                                  </button>
+                                </td>
+                                <td className="px-6 py-5">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${courier.activeOrdersCount > 0 ? 'bg-gastro-orange animate-pulse' : 'bg-gastro-ink/20'}`} />
+                                    <span className="font-bold text-sm">{courier.activeOrdersCount}</span>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-5">
+                                  <div className="flex gap-2">
+                                    <button 
+                                      onClick={() => deleteCourier(courier.id)}
+                                      className="p-2 hover:bg-red-50 hover:text-red-500 rounded-lg transition-all text-gastro-ink/30"
+                                      title="Odstrániť kuriéra"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Assign Courier to Orders Section */}
+                      <div className="bg-white rounded-[32px] border border-gastro-beige/10 shadow-sm p-8">
+                        <h3 className="text-lg font-bold uppercase tracking-tight mb-6">Priradiť Kuriéra k Objednávke</h3>
+                        <div className="space-y-4">
+                          {orders.filter(o => o.type === 'DELIVERY' && o.status !== 'COMPLETED' && o.status !== 'CANCELLED').length === 0 ? (
+                            <p className="text-sm text-gastro-ink/40 italic">Žiadne aktívne objednávky na doručenie.</p>
+                          ) : orders.filter(o => o.type === 'DELIVERY' && o.status !== 'COMPLETED' && o.status !== 'CANCELLED').map(order => (
+                            <div key={order.id} className="flex items-center justify-between p-4 rounded-2xl bg-gastro-cream/10 border border-gastro-beige/10">
+                              <div>
+                                <div className="font-bold text-sm">#{order.id.slice(-4).toUpperCase()}</div>
+                                <div className="text-[10px] text-gastro-ink/40">{order.deliveryAddress}</div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <select
+                                  value={order.courierId || ''}
+                                  onChange={(e) => assignCourierToOrder(order.id, e.target.value)}
+                                  className="bg-white border border-gastro-beige/20 rounded-xl px-4 py-2 text-xs font-bold outline-none cursor-pointer"
+                                >
+                                  <option value="">Bez kuriéra</option>
+                                  {couriers.filter(c => c.isOnline).map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Add Courier Modal */}
+                      {isAddingCourier && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-gastro-dark-green/20 backdrop-blur-sm">
+                          <motion.div 
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            className="w-full max-w-md bg-white rounded-[40px] shadow-2xl overflow-hidden"
+                          >
+                            <div className="p-8 border-b border-gastro-beige/20 flex justify-between items-center bg-gastro-cream/10">
+                              <h3 className="text-xl font-bold uppercase tracking-tight">Nový Kuriér</h3>
+                              <button onClick={() => setIsAddingCourier(false)} className="p-2 hover:bg-white rounded-full transition-colors">
+                                <X className="w-5 h-5 text-gastro-ink/40" />
+                              </button>
+                            </div>
+                            <form onSubmit={handleAddCourier} className="p-8 space-y-5">
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-gastro-ink/40 ml-4">Meno</label>
+                                <input 
+                                  required
+                                  value={newCourierName}
+                                  onChange={e => setNewCourierName(e.target.value)}
+                                  placeholder="Meno a priezvisko"
+                                  className="w-full bg-gastro-cream/10 border border-gastro-beige rounded-2xl px-5 py-3 outline-none focus:border-gastro-dark-green transition-colors text-sm font-bold"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-gastro-ink/40 ml-4">Telefón</label>
+                                <input 
+                                  required
+                                  value={newCourierPhone}
+                                  onChange={e => setNewCourierPhone(e.target.value)}
+                                  placeholder="0900 000 000"
+                                  className="w-full bg-gastro-cream/10 border border-gastro-beige rounded-2xl px-5 py-3 outline-none focus:border-gastro-dark-green transition-colors text-sm font-bold"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-gastro-ink/40 ml-4">Typ Vozidla</label>
+                                <select
+                                  value={newCourierVehicle}
+                                  onChange={e => setNewCourierVehicle(e.target.value)}
+                                  className="w-full bg-gastro-cream/10 border border-gastro-beige rounded-2xl px-5 py-3 outline-none focus:border-gastro-dark-green transition-colors text-sm font-bold appearance-none cursor-pointer"
+                                >
+                                  <option value="CAR">🚗 Auto</option>
+                                  <option value="SCOOTER">🛵 Skúter</option>
+                                  <option value="BICYCLE">🚲 Bicykel</option>
+                                </select>
+                              </div>
+                              <button 
+                                disabled={isAddingCourierSubmitting}
+                                className="w-full bg-gastro-dark-green text-white py-4 rounded-full font-bold text-sm shadow-xl shadow-gastro-dark-green/20 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform disabled:opacity-50"
+                              >
+                                {isAddingCourierSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Pridať Kuriéra'}
+                              </button>
+                            </form>
+                          </motion.div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {activeTab === 'menu' && (
                     <div className="space-y-12">
                       <div className="flex justify-between items-center mb-8">
