@@ -1,15 +1,52 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { PrismaClient } from "@prisma/client";
+import {
+  fallbackCategories,
+  fallbackSettings,
+  fallbackDailyMenu,
+  setFallbackDailyMenu,
+  type FallbackMenuItem,
+} from "./src/data/fallbackData.js";
 
-const prisma = new PrismaClient();
+const hasDatabase = Boolean(process.env.DATABASE_URL);
+const prisma = (hasDatabase ? new PrismaClient() : null) as unknown as PrismaClient;
 
-async function startServer() {
+function getFallbackCategories() {
+  return fallbackCategories
+    .map((category) => ({
+      ...category,
+      items: category.items.filter((item) => item.isActive !== false),
+    }))
+    .sort((a, b) => a.order - b.order);
+}
+
+function getFallbackItem(id: string) {
+  for (const category of fallbackCategories) {
+    const item = category.items.find((entry) => entry.id === id);
+    if (item) return item;
+  }
+  return null;
+}
+
+function updateFallbackItem(id: string, data: Partial<FallbackMenuItem>) {
+  const item = getFallbackItem(id);
+  if (!item) return null;
+
+  Object.assign(item, data);
+
+  if (data.categoryId && !fallbackCategories.some((category) => category.id === data.categoryId)) {
+    item.categoryId = fallbackCategories[0]?.id || item.categoryId;
+  }
+
+  return item;
+}
+
+export async function createApp(options: { serveClient?: boolean } = {}) {
+  const { serveClient = true } = options;
   const app = express();
-  const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: "5mb" }));
 
   // API Routes
   app.get("/api/health", (req, res) => {
@@ -34,6 +71,10 @@ async function startServer() {
   // Get Categories and Items
   app.get("/api/menu", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json(getFallbackCategories());
+      }
+
       const categories = await prisma.category.findMany({
         orderBy: { order: "asc" },
         include: {
@@ -53,6 +94,18 @@ async function startServer() {
   app.post("/api/admin/categories", async (req, res) => {
     try {
       const { name, slug, order } = req.body;
+      if (!hasDatabase) {
+        const category = {
+          id: `cat-${slug || Date.now()}`,
+          name,
+          slug,
+          order: order || fallbackCategories.length + 1,
+          items: [],
+        };
+        fallbackCategories.push(category);
+        return res.status(201).json(category);
+      }
+
       const category = await prisma.category.create({
         data: { name, slug, order: order || 0 }
       });
@@ -66,6 +119,24 @@ async function startServer() {
   app.post("/api/admin/items", async (req, res) => {
     try {
       const { name, description, price, image, categoryId, tag, isPizza } = req.body;
+      if (!hasDatabase) {
+        const category = fallbackCategories.find((entry) => entry.id === categoryId) || fallbackCategories[0];
+        const item = {
+          id: `item-${Date.now()}`,
+          name,
+          description,
+          price: Number(price),
+          image: image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=2080",
+          categoryId: category.id,
+          tag,
+          isPizza: isPizza || false,
+          isActive: true,
+          allergens: req.body.allergens || null,
+        };
+        category.items.push(item);
+        return res.status(201).json(item);
+      }
+
       const item = await prisma.menuItem.create({
         data: {
           name,
@@ -88,6 +159,15 @@ async function startServer() {
     try {
       const { id } = req.params;
       const data = req.body;
+      if (!hasDatabase) {
+        const item = updateFallbackItem(id, {
+          ...data,
+          price: data.price === undefined ? undefined : Number(data.price),
+        });
+        if (!item) return res.status(404).json({ error: "Menu item not found" });
+        return res.json(item);
+      }
+
       const item = await prisma.menuItem.update({
         where: { id },
         data
@@ -102,6 +182,12 @@ async function startServer() {
   app.delete("/api/admin/items/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      if (!hasDatabase) {
+        const item = updateFallbackItem(id, { isActive: false });
+        if (!item) return res.status(404).json({ error: "Menu item not found" });
+        return res.status(204).send();
+      }
+
       await prisma.menuItem.update({
         where: { id },
         data: { isActive: false }
@@ -117,6 +203,10 @@ async function startServer() {
   // Get User Points and History
   app.get("/api/loyalty/:email", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
       const { email } = req.params;
       const user = await prisma.user.findUnique({
         where: { email },
@@ -144,6 +234,10 @@ async function startServer() {
   // Check Coupon
   app.post("/api/coupons/validate", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.status(404).json({ error: "Neplatny kupon" });
+      }
+
       const { code, total } = req.body;
       const coupon = await prisma.coupon.findUnique({
         where: { code, isActive: true }
@@ -170,7 +264,31 @@ async function startServer() {
   // Create Order (Updated with points logic)
   app.post("/api/orders", async (req, res) => {
     try {
-      const { type, items, total, deliveryFee, deliveryAddress, customerEmail, couponCode } = req.body;
+      const { type, items, total, deliveryFee, deliveryAddress, deliveryCity, customerName, customerPhone, customerEmail, couponCode } = req.body;
+      if (!hasDatabase) {
+        const order = {
+          id: `order-${Date.now()}`,
+          status: "NEW",
+          type: type === "delivery" ? "DELIVERY" : "PICKUP",
+          total,
+          deliveryFee: deliveryFee || 0,
+          customerName,
+          customerPhone,
+          deliveryCity,
+          deliveryAddress,
+          customerEmail,
+          couponCode,
+          createdAt: new Date().toISOString(),
+          items: items.map((item: any) => ({
+            quantity: item.quantity,
+            price: item.price,
+            menuItem: getFallbackItem(item.id) || { name: item.name || item.id },
+            itemName: item.name || null,
+          })),
+        };
+        notifyOrderClients(order);
+        return res.status(201).json(order);
+      }
 
       // Calculate points to award (1 point for each 1 EUR)
       const pointsToAward = Math.floor(total);
@@ -180,10 +298,13 @@ async function startServer() {
           type: type === "delivery" ? "DELIVERY" : "PICKUP",
           total,
           deliveryFee: deliveryFee || 0,
+          customerName,
+          customerPhone,
+          deliveryCity,
           deliveryAddress,
           items: {
             create: items.map((item: any) => ({
-              menuItemId: item.id,
+              ...(item.type === "daily" ? { itemName: item.name } : { menuItemId: item.id }),
               quantity: item.quantity,
               price: item.price,
             })),
@@ -260,6 +381,10 @@ async function startServer() {
   // Get Orders (Admin)
   app.get("/api/admin/orders", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json([]);
+      }
+
       const orders = await prisma.order.findMany({
         orderBy: { createdAt: "desc" },
         include: {
@@ -279,6 +404,10 @@ async function startServer() {
   // Update Order Status (Admin)
   app.patch("/api/admin/orders/:id/status", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json({ id: req.params.id, status: req.body.status });
+      }
+
       const { id } = req.params;
       const { status } = req.body;
 
@@ -296,6 +425,10 @@ async function startServer() {
   // Get Order Status (Client Polling)
   app.get("/api/orders/:id/status", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json({ status: "NEW" });
+      }
+
       const { id } = req.params;
       const order = await prisma.order.findUnique({
         where: { id },
@@ -313,6 +446,20 @@ async function startServer() {
   app.post("/api/reservations", async (req, res) => {
     try {
       const { name, email, phone, date, guests, note } = req.body;
+      if (!hasDatabase) {
+        return res.status(201).json({
+          id: `reservation-${Date.now()}`,
+          name,
+          email,
+          phone,
+          date,
+          guests: parseInt(guests),
+          note,
+          status: "PENDING",
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       const reservation = await prisma.reservation.create({
         data: {
           name,
@@ -334,6 +481,10 @@ async function startServer() {
   // Get Reservations (Admin)
   app.get("/api/admin/reservations", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json([]);
+      }
+
       const reservations = await prisma.reservation.findMany({
         orderBy: { date: "asc" }
       });
@@ -346,6 +497,10 @@ async function startServer() {
   // Update Reservation Status (Admin)
   app.patch("/api/admin/reservations/:id/status", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json({ id: req.params.id, status: req.body.status });
+      }
+
       const { id } = req.params;
       const { status } = req.body;
       const reservation = await prisma.reservation.update({
@@ -363,8 +518,18 @@ async function startServer() {
   // Get Current Daily Menu
   app.get("/api/daily-menu", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json(fallbackDailyMenu);
+      }
+
       const menu = await prisma.dailyMenu.findFirst({
-        orderBy: { date: "desc" }
+        orderBy: { date: "desc" },
+        include: {
+          items: {
+            where: { isActive: true },
+            orderBy: { order: "asc" },
+          },
+        },
       });
       res.json(menu);
     } catch (error) {
@@ -375,17 +540,49 @@ async function startServer() {
   // Update Daily Menu (Admin)
   app.post("/api/admin/daily-menu", async (req, res) => {
     try {
-      const { content, date } = req.body;
+      const { content, date, items = [] } = req.body;
+      if (!hasDatabase) {
+        setFallbackDailyMenu(content, date || new Date().toISOString().split("T")[0], items);
+        return res.json(fallbackDailyMenu);
+      }
+
       const normalizedDate = new Date(date || new Date().toISOString().split('T')[0]);
       normalizedDate.setHours(0, 0, 0, 0);
 
       const menu = await prisma.dailyMenu.upsert({
         where: { date: normalizedDate },
-        update: { content },
+        update: { 
+          content,
+          items: {
+            deleteMany: {},
+            create: items.map((item: any, index: number) => ({
+              name: item.name,
+              description: item.description || "",
+              price: Number(item.price || 0),
+              order: index + 1,
+              isActive: item.isActive !== false,
+            })),
+          },
+        },
         create: { 
           content, 
-          date: normalizedDate
-        }
+          date: normalizedDate,
+          items: {
+            create: items.map((item: any, index: number) => ({
+              name: item.name,
+              description: item.description || "",
+              price: Number(item.price || 0),
+              order: index + 1,
+              isActive: item.isActive !== false,
+            })),
+          },
+        },
+        include: {
+          items: {
+            where: { isActive: true },
+            orderBy: { order: "asc" },
+          },
+        },
       });
       res.json(menu);
     } catch (error) {
@@ -399,6 +596,10 @@ async function startServer() {
   // Get All Settings
   app.get("/api/settings", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json(fallbackSettings);
+      }
+
       const settings = await prisma.restaurantSetting.findMany();
       const settingsMap = settings.reduce((acc: any, curr) => {
         acc[curr.key] = curr.value;
@@ -414,6 +615,12 @@ async function startServer() {
   app.post("/api/admin/settings", async (req, res) => {
     try {
       const settings = req.body; // Expecting { key1: value1, key2: value2 }
+      if (!hasDatabase) {
+        Object.entries(settings).forEach(([key, value]) => {
+          fallbackSettings[key] = String(value);
+        });
+        return res.json({ success: true });
+      }
       
       const updatePromises = Object.entries(settings).map(([key, value]) => {
         return prisma.restaurantSetting.upsert({
@@ -434,6 +641,10 @@ async function startServer() {
   // Seed Menu Endpoint (One-time or emergency use)
   app.post("/api/admin/seed", async (req, res) => {
     try {
+      if (!hasDatabase) {
+        return res.json({ success: true, message: "Fallback menu is already available" });
+      }
+
       // 1. Categories
       const cats = [
         { name: "Pizza", slug: "pizza", order: 1 },
@@ -625,7 +836,12 @@ async function startServer() {
   });
 
   // Vite middleware for development
+  if (!serveClient) {
+    return app;
+  }
+
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -639,9 +855,18 @@ async function startServer() {
     });
   }
 
+  return app;
+}
+
+async function startServer() {
+  const app = await createApp();
+  const PORT = Number(process.env.PORT || 3000);
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}

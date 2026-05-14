@@ -1,35 +1,51 @@
 <!doctype html>
-<html lang="en">
+<html lang="sk">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Reštaurácia Jašterka Hlohovec | Denné menu & Pizza</title>
-    <meta name="description" content="Najlepšia reštaurácia a pizzeria v Hlohovci. Ponúkame chutné denné menu, tradičnú kuchyňu a rýchly rozvoz priamo k vám." />
-    <meta name="keywords" content="reštaurácia Hlohovec, pizzeria Hlohovec, denné menu Hlohovec, rozvoz jedla, pizza Hlohovec, Jašterka" />
-    
-    <!-- PWA -->
+    <title>Denné menu a pizza | Reštaurácia Jašterka Hlohovec</title>
+    <meta
+      name="description"
+      content="Reštaurácia Jašterka v Hlohovci ponúka denné menu, pizzu a chutné jedlá. Pozrite si aktuálnu ponuku, kontakt a otváracie hodiny."
+    />
+    <meta name="keywords" content="reštaurácia Hlohovec, pizzeria Hlohovec, denné menu Hlohovec, pizza Hlohovec, rozvoz jedla, Jašterka" />
+    <meta name="theme-color" content="#172610" />
+    <link rel="canonical" href="https://jasterka-gemini.vercel.app/" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#1A2C1A" />
-    <link rel="apple-touch-icon" href="https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=180&h=180&auto=format&fit=crop" />
-    
-    <!-- Open Graph / Facebook -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://jasterka.sk/" />
-    <meta property="og:title" content="Reštaurácia Jašterka Hlohovec | Poctivá kuchyňa" />
-    <meta property="og:description" content="Chutné denné menu a najlepšia pizza v Hlohovci. Objednajte si online!" />
-    <meta property="og:image" content="https://images.unsplash.com/photo-1550966841-3ee7adac1661?q=80&w=1200&h=630&auto=format&fit=crop" />
+    <meta property="og:locale" content="sk_SK" />
+    <meta property="og:url" content="https://jasterka-gemini.vercel.app/" />
+    <meta property="og:title" content="Denné menu a pizza | Reštaurácia Jašterka Hlohovec" />
+    <meta property="og:description" content="Denné menu, pizza a poctivé jedlá v Hlohovci. Pozrite si ponuku a objednajte si jednoducho cez web." />
+    <meta property="og:image" content="https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=1200&h=630&auto=format&fit=crop" />
+    <meta property="og:image:alt" content="Čerstvá pizza z reštaurácie Jašterka" />
 
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:title" content="Reštaurácia Jašterka Hlohovec" />
-    <meta property="twitter:description" content="Chutné denné menu a najlepšia pizza v Hlohovci. Objednajte si online!" />
-    <meta property="twitter:image" content="https://images.unsplash.com/photo-1550966841-3ee7adac1661?q=80&w=1200&h=630&auto=format&fit=crop" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Denné menu a pizza | Reštaurácia Jašterka Hlohovec" />
+    <meta name="twitter:description" content="Denné menu, pizza a poctivé jedlá v Hlohovci. Pozrite si ponuku a objednajte si jednoducho cez web." />
+    <meta name="twitter:image" content="https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=1200&h=630&auto=format&fit=crop" />
 
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Restaurant",
+        "name": "Reštaurácia Jašterka",
+        "servesCuisine": "Slovenská",
+        "url": "https://jasterka-gemini.vercel.app/",
+        "telephone": "+421949401505",
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Hlohovec",
+          "addressCountry": "SK"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

@@ -231,6 +231,92 @@ async function main() {
     });
   }
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  await prisma.dailyMenu.upsert({
+    where: { date: today },
+    update: {
+      content: [
+        'Denne menu 7,50 EUR',
+        '',
+        'Polievka:',
+        '- Slepaci vyvar s rezancami',
+        '- Fazuľova so zeleninou',
+      ].join('\n'),
+      items: {
+        deleteMany: {},
+        create: [
+          {
+            name: 'Vyprazany kuraci rezen',
+            description: 'Zemiakova kasa, kysla uhorka',
+            price: 7.5,
+            order: 1,
+          },
+          {
+            name: 'Bravcovy perkelt',
+            description: 'Maslove halusky',
+            price: 7.5,
+            order: 2,
+          },
+          {
+            name: 'Salat s grilovanym ostiepkom',
+            description: 'Brusnicovy dressing',
+            price: 7.5,
+            order: 3,
+          },
+        ],
+      },
+    },
+    create: {
+      date: today,
+      content: [
+        'Denne menu 7,50 EUR',
+        '',
+        'Polievka:',
+        '- Slepaci vyvar s rezancami',
+        '- Fazuľova so zeleninou',
+      ].join('\n'),
+      items: {
+        create: [
+          {
+            name: 'Vyprazany kuraci rezen',
+            description: 'Zemiakova kasa, kysla uhorka',
+            price: 7.5,
+            order: 1,
+          },
+          {
+            name: 'Bravcovy perkelt',
+            description: 'Maslove halusky',
+            price: 7.5,
+            order: 2,
+          },
+          {
+            name: 'Salat s grilovanym ostiepkom',
+            description: 'Brusnicovy dressing',
+            price: 7.5,
+            order: 3,
+          },
+        ],
+      },
+    },
+  });
+
+  const settings = {
+    restaurant_name: 'Jasterka',
+    address: 'Bernolakova 12, Hlohovec',
+    contact_phone: '+421 9xx xxx xxx',
+    opening_hours: 'Po - Ne: 10:00 - 22:00',
+  };
+
+  for (const [key, value] of Object.entries(settings)) {
+    await prisma.restaurantSetting.upsert({
+      where: { key },
+      update: { value },
+      create: { key, value },
+    });
+  }
+
   console.log('Seed completed successfully.');
 }
 

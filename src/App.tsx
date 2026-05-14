@@ -8,6 +8,22 @@ import AdminLogin from './components/AdminLogin';
 
 const API_KEY = process.env.GOOGLE_MAPS_PLATFORM_KEY || '';
 const hasValidKey = Boolean(API_KEY) && API_KEY !== 'YOUR_API_KEY';
+const BOLT_FOOD_URL = "SEM_DOPLNIT_BOLT_FOOD_LINK";
+
+const deliveryZones = [
+  { city: 'Hlohovec', fee: 2 },
+  { city: 'Šulekovo', fee: 2 },
+  { city: 'Leopoldov', fee: 2 },
+  { city: 'Koplotovce', fee: 3 },
+  { city: 'Červeník', fee: 3 },
+  { city: 'Bojničky', fee: 3 },
+  { city: 'Kľačany', fee: 4 },
+  { city: 'Tepličky', fee: 4 },
+  { city: 'Dvorníky', fee: 4 },
+  { city: 'Otrokovce', fee: 4 },
+  { city: 'Trhovište', fee: 4 },
+  { city: 'Sasinkovo', fee: 4.5 },
+];
 
 function OrderTrackingMap({ address }: { address: string }) {
   const map = useMap();
@@ -73,14 +89,25 @@ interface Category {
   items: MenuItem[];
 }
 
+interface DailyMenuItem {
+  id: string;
+  name: string;
+  description?: string;
+  price: number | string;
+  isActive?: boolean;
+}
+
+type ActiveCategory = string | 'all';
+
 export default function App() {
   const [view, setView] = useState<'client' | 'admin'>('client');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [deliveryType, setDeliveryType] = useState<'pickup' | 'delivery'>('delivery');
+  const [deliveryCity, setDeliveryCity] = useState('Hlohovec');
   const [categories, setCategories] = useState<Category[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>('');
+  const [activeCategory, setActiveCategory] = useState<ActiveCategory>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
@@ -96,8 +123,15 @@ export default function App() {
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [couponError, setCouponError] = useState('');
   const [dailyMenu, setDailyMenu] = useState<any>(null);
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
 
   const [submittedAddress, setSubmittedAddress] = useState<string | null>(null);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
@@ -106,7 +140,29 @@ export default function App() {
     }
   };
 
+  const showCategory = (slug: ActiveCategory) => {
+    setActiveCategory(slug);
+    requestAnimationFrame(() => scrollToSection('menu'));
+  };
+
   const { items, addItem, removeItem, updateQuantity, getTotalItems, getTotalPrice, clearCart } = useCartStore();
+  const selectedDeliveryFee = deliveryType === 'delivery'
+    ? deliveryZones.find((zone) => zone.city === deliveryCity)?.fee || 0
+    : 0;
+  const restaurantName = settings.restaurant_name || 'Jašterka';
+  const contactPhone = settings.contact_phone || '0949 401 505';
+  const phoneHref = `tel:${contactPhone.replace(/[^\d+]/g, '')}`;
+  const addressText = settings.address || 'Hlohovec, Slovensko';
+  const emailText = settings.contact_email || 'info@jasterka.sk';
+  const mapsHref = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`Reštaurácia Jašterka ${addressText}`)}`;
+  const googleReviewsHref = mapsHref;
+  const openingHoursText = settings.opening_hours || 'Po - Ne: 10:00 - 22:00';
+
+  const getMenuMeta = (item: MenuItem) => {
+    const weight = item.description?.match(/(\d{2,4}\s?g|0,\d+\s?l)/i)?.[0] || (item.isPizza ? 'pizza' : 'porcia');
+    const allergens = item.allergens?.trim() || 'informácie u obsluhy';
+    return `${weight} • alergény ${allergens}`;
+  };
 
   useEffect(() => {
     loadMenu();
@@ -119,6 +175,26 @@ export default function App() {
       loadLoyalty(savedEmail);
     }
   }, []);
+
+  useEffect(() => {
+    const onPopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      '/': 'Reštaurácia Jašterka v Hlohovci',
+      '/ponuka': 'Ponuka | Reštaurácia Jašterka Hlohovec',
+      '/ponuka/denne-menu': 'Denné menu | Reštaurácia Jašterka Hlohovec',
+      '/ponuka/jedalny-listok': 'Jedálny lístok | Reštaurácia Jašterka Hlohovec',
+      '/ponuka/pizza': 'Pizza | Reštaurácia Jašterka Hlohovec',
+      '/rezervacia': 'Rezervácia stola | Reštaurácia Jašterka Hlohovec',
+      '/eventy': 'Eventy a oslavy | Reštaurácia Jašterka Hlohovec',
+      '/kontakt': 'Kontakt | Reštaurácia Jašterka Hlohovec',
+    };
+    document.title = titles[currentPath] || titles['/'];
+  }, [currentPath]);
 
   const loadSettings = async () => {
     try {
@@ -176,7 +252,7 @@ export default function App() {
   };
 
   const getDiscountedTotal = () => {
-    const baseTotal = getTotalPrice() + (deliveryType === 'delivery' ? 2 : 0);
+    const baseTotal = getTotalPrice() + selectedDeliveryFee;
     if (!appliedCoupon) return baseTotal;
     
     if (appliedCoupon.type === 'PERCENT') {
@@ -207,7 +283,7 @@ export default function App() {
       const data = await res.json();
       if (Array.isArray(data)) {
         setCategories(data);
-        if (data.length > 0) setActiveCategory(data[0].slug);
+        setActiveCategory('all');
       }
     } catch (err) {
       console.error('Failed to fetch menu:', err);
@@ -224,13 +300,25 @@ export default function App() {
     const formData = new FormData(e.target as HTMLFormElement);
     const address = formData.get('address') as string;
     const email = formData.get('email') as string;
+    const name = formData.get('name') as string;
+    const phone = formData.get('phone') as string;
+    const city = deliveryType === 'delivery' ? deliveryCity : '';
 
     const data = {
       type: deliveryType,
-      items: items.map(i => ({ id: i.id, quantity: i.quantity, price: i.price })),
+      items: items.map(i => ({
+        id: i.type === 'daily' ? i.id.replace(/^daily-/, '') : i.id,
+        name: i.name,
+        type: i.type,
+        quantity: i.quantity,
+        price: i.price,
+      })),
       total: getDiscountedTotal(),
-      deliveryFee: deliveryType === 'delivery' ? 2 : 0,
-      deliveryAddress: address,
+      deliveryFee: selectedDeliveryFee,
+      deliveryAddress: deliveryType === 'delivery' ? `${address}, ${city}` : undefined,
+      deliveryCity: city,
+      customerName: name,
+      customerPhone: phone,
       customerEmail: email,
       couponCode: appliedCoupon?.code,
     };
@@ -241,7 +329,7 @@ export default function App() {
     }
     
     if (address) {
-      setSubmittedAddress(address);
+      setSubmittedAddress(`${address}, ${city}`);
     }
 
     try {
@@ -266,16 +354,33 @@ export default function App() {
     }
   };
 
-  const currentItems = Array.isArray(categories) 
-    ? categories.find(c => c.slug === activeCategory)?.items || []
+  const currentItems = Array.isArray(categories)
+    ? activeCategory === 'all'
+      ? categories.flatMap((category) =>
+          category.items.map((item) => ({
+            ...item,
+            category: item.category || { name: category.name, slug: category.slug },
+          }))
+        )
+      : categories.find(c => c.slug === activeCategory)?.items || []
     : [];
 
   const handleAddToCart = (item: MenuItem) => {
     addItem({
       id: item.id,
       name: item.name,
-      price: item.price,
+      price: Number(item.price),
       image: item.image,
+    });
+  };
+
+  const handleAddDailyMenuToCart = (item: DailyMenuItem) => {
+    addItem({
+      id: `daily-${item.id}`,
+      name: `Denné menu: ${item.name}`,
+      price: Number(item.price),
+      image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=2080',
+      type: 'daily',
     });
   };
 
@@ -294,6 +399,389 @@ export default function App() {
     } catch (err) {
       return false;
     }
+  };
+
+  const menuItemsWithCategory = Array.isArray(categories)
+    ? categories.flatMap((category) =>
+        category.items.map((item) => ({
+          ...item,
+          category: item.category || { name: category.name, slug: category.slug },
+        }))
+      )
+    : [];
+  const pizzaItems = menuItemsWithCategory.filter((item) => item.isPizza || item.category?.slug === 'pizza');
+  const regularMenuItems = menuItemsWithCategory.filter((item) => !item.isPizza && !item.category?.slug?.startsWith('pizza'));
+  const dailyPreviewItems = (dailyMenu?.items || []).slice(0, 3);
+
+  const PageHeader = ({ eyebrow, title, text, children }: { eyebrow?: string; title: string; text: string; children?: React.ReactNode }) => (
+    <section className="pt-32 pb-12 px-6 bg-white border-b border-gastro-beige/20">
+      <div className="max-w-7xl mx-auto">
+        {eyebrow && <div className="text-[10px] font-black uppercase tracking-[0.25em] text-gastro-orange mb-4">{eyebrow}</div>}
+        <div className="max-w-3xl">
+          <h1 className="text-5xl md:text-7xl font-black leading-[1.05] mb-6">{title}</h1>
+          <p className="text-lg text-gastro-ink/65 leading-relaxed">{text}</p>
+        </div>
+        {children && <div className="mt-8">{children}</div>}
+      </div>
+    </section>
+  );
+
+  const BoltFoodLink = ({ className = '' }: { className?: string }) => (
+    <a href={BOLT_FOOD_URL} target="_blank" rel="noopener noreferrer" className={className}>
+      Objednať cez Bolt Food
+    </a>
+  );
+
+  const MenuCard = ({ title, text, cta, path, image }: { title: string; text: string; cta: string; path: string; image: string }) => (
+    <button
+      onClick={() => navigateTo(path)}
+      className="group text-left bg-white border border-gastro-beige/30 rounded-[32px] overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all focus:outline-none focus:ring-4 focus:ring-gastro-orange/25"
+    >
+      <div className="h-56 overflow-hidden">
+        <img src={image} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" decoding="async" />
+      </div>
+      <div className="p-8">
+        <h2 className="text-3xl font-black mb-3 text-gastro-dark-green">{title}</h2>
+        <p className="text-gastro-ink/60 leading-relaxed mb-6">{text}</p>
+        <span className="inline-flex bg-gastro-dark-green text-white px-6 py-3 rounded-full text-sm font-bold group-hover:bg-gastro-orange transition-colors">
+          {cta}
+        </span>
+      </div>
+    </button>
+  );
+
+  const FoodGrid = ({ itemsToRender }: { itemsToRender: MenuItem[] }) => (
+    isLoading ? (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-10 h-10 animate-spin text-gastro-dark-green" />
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {itemsToRender.map((item, idx) => (
+          <motion.div
+            key={item.id}
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: idx * 0.03 }}
+            className="bg-white rounded-[32px] overflow-hidden border border-gastro-beige/25 shadow-sm"
+          >
+            <div className="h-56 overflow-hidden">
+              <img
+                src={item.image || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=1200&auto=format&fit=crop'}
+                alt={item.name}
+                className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+            <div className="p-7">
+              {item.category && (
+                <div className="text-[9px] font-black text-gastro-orange uppercase tracking-[0.2em] mb-3">{item.category.name}</div>
+              )}
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <h3 className="text-xl font-black text-gastro-dark-green">{item.name}</h3>
+                <span className="text-lg font-black text-gastro-dark-green whitespace-nowrap">{Number(item.price).toFixed(2)} €</span>
+              </div>
+              <p className="text-sm text-gastro-ink/60 leading-relaxed mb-4">{item.description}</p>
+              <div className="text-[10px] font-bold text-gastro-ink/40 uppercase tracking-[0.16em] mb-5">{getMenuMeta(item)}</div>
+              <div className="flex gap-3">
+                <button onClick={() => handleAddToCart(item)} className="flex-1 bg-gastro-dark-green text-white py-3 rounded-full font-bold text-sm hover:bg-gastro-orange transition-colors">
+                  Pridať do košíka
+                </button>
+                <a href={phoneHref} className="px-4 py-3 rounded-full border border-gastro-beige text-gastro-dark-green hover:border-gastro-orange transition-colors" aria-label="Zavolať">
+                  <Phone className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    )
+  );
+
+  const ReservationForm = ({ eventMode = false }: { eventMode?: boolean }) => (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target as HTMLFormElement);
+        const raw = Object.fromEntries(formData);
+        const payload = {
+          name: raw.name,
+          email: raw.email || (eventMode ? 'eventy@jasterka.sk' : 'rezervacia@jasterka.sk'),
+          phone: raw.phone,
+          date: raw.date,
+          guests: raw.guests,
+          note: eventMode ? `Event: ${raw.eventType || '-'} | ${raw.note || ''}` : raw.note,
+        };
+        try {
+          const res = await fetch('/api/reservations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (res.ok) {
+            setReservationSuccess(true);
+            (e.target as HTMLFormElement).reset();
+          }
+        } catch (err) {
+          console.error('Reservation error:', err);
+        }
+      }}
+      className="bg-white border border-gastro-beige/25 rounded-[36px] p-8 md:p-10 shadow-xl space-y-5"
+    >
+      {reservationSuccess && (
+        <div className="p-4 rounded-2xl bg-green-50 text-green-700 font-bold text-sm">Požiadavka bola odoslaná. Ozveme sa vám späť.</div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <input name="name" required placeholder="Meno" className="bg-gastro-cream/30 border border-gastro-beige rounded-2xl px-5 py-4 outline-none focus:border-gastro-dark-green" />
+        <input name="phone" required type="tel" placeholder="Telefón" className="bg-gastro-cream/30 border border-gastro-beige rounded-2xl px-5 py-4 outline-none focus:border-gastro-dark-green" />
+        {eventMode && (
+          <select name="eventType" className="bg-gastro-cream/30 border border-gastro-beige rounded-2xl px-5 py-4 outline-none focus:border-gastro-dark-green">
+            <option>Rodinná oslava</option>
+            <option>Firemná akcia</option>
+            <option>Súkromný event</option>
+            <option>Iné</option>
+          </select>
+        )}
+        <input name="guests" required type="number" min="1" placeholder="Počet osôb" className="bg-gastro-cream/30 border border-gastro-beige rounded-2xl px-5 py-4 outline-none focus:border-gastro-dark-green" />
+        <input name="date" required type="datetime-local" className="bg-gastro-cream/30 border border-gastro-beige rounded-2xl px-5 py-4 outline-none focus:border-gastro-dark-green" />
+        {!eventMode && <input name="email" type="email" placeholder="Email" className="bg-gastro-cream/30 border border-gastro-beige rounded-2xl px-5 py-4 outline-none focus:border-gastro-dark-green" />}
+      </div>
+      <textarea name="note" rows={4} placeholder="Poznámka" className="w-full bg-gastro-cream/30 border border-gastro-beige rounded-2xl px-5 py-4 outline-none focus:border-gastro-dark-green" />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <button className="flex-1 bg-gastro-dark-green text-white py-4 rounded-full font-black hover:bg-gastro-orange transition-colors">
+          {eventMode ? 'Zarezervovať event' : 'Rezervovať stôl'}
+        </button>
+        <a href={phoneHref} className="flex-1 text-center border-2 border-gastro-dark-green text-gastro-dark-green py-4 rounded-full font-black hover:bg-gastro-dark-green hover:text-white transition-colors">
+          {eventMode ? 'Zavolať a dohodnúť termín' : 'Zavolať a rezervovať'}
+        </a>
+      </div>
+    </form>
+  );
+
+  const HomePage = () => (
+    <>
+      <section className="relative pt-32 pb-16 md:pt-40 md:pb-24 min-h-[82vh] flex items-center overflow-hidden">
+        <div className="absolute inset-0 z-0">
+          <img src="https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=2200&auto=format&fit=crop" alt="Reštaurácia Jašterka v Hlohovci" className="w-full h-full object-cover opacity-25" fetchPriority="high" />
+          <div className="absolute inset-0 bg-gradient-to-r from-gastro-cream via-gastro-cream/90 to-gastro-cream/40" />
+        </div>
+        <div className="max-w-7xl mx-auto px-6 relative z-10 w-full">
+          <div className="max-w-4xl">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 border border-gastro-beige/50 rounded-full text-gastro-dark-green text-xs font-bold uppercase tracking-widest mb-8">
+              <Clock className="w-3 h-3" /> {openingHoursText}
+            </div>
+            <h1 className="text-5xl sm:text-6xl md:text-8xl font-black leading-[1.05] mb-8">Reštaurácia Jašterka v Hlohovci</h1>
+            <p className="text-lg md:text-xl text-gastro-ink/70 mb-10 max-w-2xl leading-relaxed">
+              Denné menu, pizza, rezervácie stolov a priestory pre oslavy či firemné eventy.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button onClick={() => navigateTo('/ponuka')} className="bg-gastro-orange text-white px-9 py-5 rounded-full font-black hover:bg-gastro-dark-green transition-colors">Pozrieť ponuku</button>
+              <button onClick={() => navigateTo('/rezervacia')} className="bg-white border-2 border-gastro-dark-green text-gastro-dark-green px-9 py-5 rounded-full font-black hover:bg-gastro-dark-green hover:text-white transition-colors">Rezervovať stôl</button>
+              <BoltFoodLink className="bg-white/70 border border-gastro-beige text-gastro-dark-green px-9 py-5 rounded-full font-black text-center hover:border-gastro-orange transition-colors" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 px-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            ['Chcem jesť', 'Vyberte si denné menu, stálu ponuku alebo pizzu.', '/ponuka'],
+            ['Chcem rezervovať stôl', 'Rezervácia pre obed, večeru alebo posedenie.', '/rezervacia'],
+            ['Chcem event', 'Oslavy, rodinné stretnutia a firemné akcie.', '/eventy'],
+          ].map(([title, text, path]) => (
+            <button key={title} onClick={() => navigateTo(path)} className="text-left bg-white border border-gastro-beige/30 rounded-[32px] p-8 hover:shadow-xl transition-all">
+              <h2 className="text-2xl font-black text-gastro-dark-green mb-3">{title}</h2>
+              <p className="text-gastro-ink/60 leading-relaxed">{text}</p>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="py-16 px-6 bg-white">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-gastro-orange mb-4">Dnešné menu preview</div>
+            <h2 className="text-4xl md:text-5xl font-black mb-6">Obedová ponuka na dnes</h2>
+            <p className="text-gastro-ink/60 leading-relaxed mb-8">Rýchly náhľad denného menu. Celú ponuku otvoríte samostatne bez miešania s pizzou a jedálnym lístkom.</p>
+            <button onClick={() => navigateTo('/ponuka/denne-menu')} className="bg-gastro-dark-green text-white px-8 py-4 rounded-full font-bold hover:bg-gastro-orange transition-colors">Zobraziť denné menu</button>
+          </div>
+          <div className="bg-gastro-cream rounded-[36px] p-8 border border-gastro-beige/30">
+            {dailyPreviewItems.length > 0 ? dailyPreviewItems.map((item: DailyMenuItem) => (
+              <div key={item.id} className="flex items-start justify-between gap-4 py-4 border-b border-gastro-beige/30 last:border-0">
+                <div>
+                  <h3 className="font-black text-gastro-dark-green">{item.name}</h3>
+                  {item.description && <p className="text-sm text-gastro-ink/55 mt-1">{item.description}</p>}
+                </div>
+                <span className="font-black">{Number(item.price).toFixed(2)} €</span>
+              </div>
+            )) : <p className="text-gastro-ink/50">Denné menu bude čoskoro zverejnené.</p>}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 px-6">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-4xl md:text-5xl font-black mb-10">Služby</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              ['Reštaurácia', 'Poctivé jedlá a príjemné posedenie v Hlohovci.', '/kontakt'],
+              ['Pizza', 'Pizza z našej stálej ponuky.', '/ponuka/pizza'],
+              ['Rozvoz / Bolt Food', 'Objednávka cez web alebo cez Bolt Food.', BOLT_FOOD_URL],
+              ['Rezervácie', 'Rezervujte si stôl vopred.', '/rezervacia'],
+              ['Eventy / oslavy', 'Priestor pre oslavy a firemné posedenia.', '/eventy'],
+              ['Kontakt', 'Adresa, telefón, mapa a otváracie hodiny.', '/kontakt'],
+            ].map(([title, text, path]) => (
+              path === BOLT_FOOD_URL ? (
+                <a key={title} href={BOLT_FOOD_URL} target="_blank" rel="noopener noreferrer" className="bg-white rounded-[28px] border border-gastro-beige/30 p-7 hover:shadow-lg transition-all">
+                  <h3 className="text-xl font-black text-gastro-dark-green mb-3">{title}</h3>
+                  <p className="text-sm text-gastro-ink/60 leading-relaxed">{text}</p>
+                </a>
+              ) : (
+                <button key={title} onClick={() => navigateTo(path)} className="text-left bg-white rounded-[28px] border border-gastro-beige/30 p-7 hover:shadow-lg transition-all">
+                  <h3 className="text-xl font-black text-gastro-dark-green mb-3">{title}</h3>
+                  <p className="text-sm text-gastro-ink/60 leading-relaxed">{text}</p>
+                </button>
+              )
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <ContactBlock compact />
+    </>
+  );
+
+  const MenuLandingPage = () => (
+    <>
+      <PageHeader eyebrow="Ponuka" title="Vyberte si typ ponuky" text="Najprv si zvoľte, či hľadáte denné menu, stálu ponuku alebo pizzu. Produkty sa zobrazia až v konkrétnej kategórii.">
+        <BoltFoodLink className="inline-flex bg-gastro-orange text-white px-7 py-4 rounded-full font-black hover:bg-gastro-dark-green transition-colors" />
+      </PageHeader>
+      <section className="py-16 px-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
+          <MenuCard title="Denné menu" text="Aktuálna obedová ponuka na dnes." cta="Zobraziť denné menu" path="/ponuka/denne-menu" image="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=1200&auto=format&fit=crop" />
+          <MenuCard title="Jedálny lístok" text="Stála ponuka jedál reštaurácie." cta="Zobraziť jedálny lístok" path="/ponuka/jedalny-listok" image="https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=1200&auto=format&fit=crop" />
+          <MenuCard title="Pizza" text="Výber pizze z našej ponuky." cta="Zobraziť pizzu" path="/ponuka/pizza" image="https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=1200&auto=format&fit=crop" />
+        </div>
+      </section>
+    </>
+  );
+
+  const DailyMenuPage = () => (
+    <>
+      <PageHeader eyebrow="Denné menu" title="Denné menu" text="Aktuálna obedová ponuka. Jednotlivé menučka môžete vložiť priamo do košíka." />
+      <section className="py-16 px-6">
+        <div className="max-w-7xl mx-auto">
+          {dailyMenu && dailyMenu.content ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+              <div className="lg:col-span-5 bg-white rounded-[32px] p-8 border border-gastro-beige/25 whitespace-pre-wrap leading-relaxed">{dailyMenu.content}</div>
+              <div className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-5">
+                {(dailyMenu.items || []).map((item: DailyMenuItem) => (
+                  <div key={item.id} className="bg-white border border-gastro-beige/25 rounded-[28px] p-6">
+                    <div className="flex justify-between gap-4 mb-3">
+                      <h3 className="font-black text-xl text-gastro-dark-green">{item.name}</h3>
+                      <span className="font-black">{Number(item.price).toFixed(2)} €</span>
+                    </div>
+                    {item.description && <p className="text-sm text-gastro-ink/60 mb-5">{item.description}</p>}
+                    <button onClick={() => handleAddDailyMenuToCart(item)} className="w-full bg-gastro-dark-green text-white py-3 rounded-full font-bold hover:bg-gastro-orange transition-colors">Pridať do košíka</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-[32px] p-12 text-center text-gastro-ink/50 border border-gastro-beige/25">Denné menu na dnes ešte nebolo zverejnené.</div>
+          )}
+        </div>
+      </section>
+    </>
+  );
+
+  const MenuListPage = () => (
+    <>
+      <PageHeader eyebrow="Jedálny lístok" title="Stála ponuka jedál" text="Jedlá z nášho jedálneho lístka pre osobný odber, rozvoz alebo objednávku cez web." />
+      <section className="py-16 px-6 max-w-7xl mx-auto">
+        <FoodGrid itemsToRender={regularMenuItems} />
+      </section>
+    </>
+  );
+
+  const PizzaPage = () => (
+    <>
+      <PageHeader eyebrow="Pizza" title="Pizza" text="Výber pizze z našej ponuky. Okraje automaticky potierame cesnakom, dostupný je rajčinový aj smotanový základ." />
+      <section className="py-16 px-6 max-w-7xl mx-auto">
+        <FoodGrid itemsToRender={pizzaItems} />
+      </section>
+    </>
+  );
+
+  const ReservationPage = () => (
+    <>
+      <PageHeader eyebrow="Rezervácia stola" title="Rezervujte si stôl" text="Vyplňte krátky formulár alebo nám zavolajte a radi vám potvrdíme termín." />
+      <section className="py-16 px-6">
+        <div className="max-w-4xl mx-auto"><ReservationForm /></div>
+      </section>
+    </>
+  );
+
+  const EventsPage = () => (
+    <>
+      <PageHeader eyebrow="Eventy / oslavy" title="Priestor pre oslavy a eventy v Hlohovci" text="Zarezervujte si u nás rodinnú oslavu, firemné posedenie alebo súkromný event." />
+      <section className="py-16 px-6">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+          <div className="bg-white rounded-[36px] p-8 border border-gastro-beige/25">
+            <h2 className="text-3xl font-black mb-6 text-gastro-dark-green">Zabezpečíme</h2>
+            {['rodinné oslavy', 'rodinné stretnutia', 'firemné akcie', 'menšie eventy', 'rezerváciu priestoru'].map((item) => (
+              <div key={item} className="flex items-center gap-3 py-3 border-b border-gastro-beige/20 last:border-0">
+                <CheckCircle2 className="w-5 h-5 text-gastro-orange" />
+                <span className="font-bold">{item}</span>
+              </div>
+            ))}
+          </div>
+          <ReservationForm eventMode />
+        </div>
+      </section>
+    </>
+  );
+
+  const ContactBlock = ({ compact = false }: { compact?: boolean }) => (
+    <section className={`${compact ? 'py-16' : 'py-16'} px-6 bg-white`}>
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
+        <div className="lg:col-span-5">
+          <h2 className="text-4xl font-black mb-6">Kontakt</h2>
+          <div className="space-y-5">
+            <a href={mapsHref} target="_blank" rel="noopener noreferrer" className="flex gap-4 text-gastro-dark-green hover:text-gastro-orange"><MapPin className="w-5 h-5" /><span className="font-bold">{addressText}</span></a>
+            <a href={phoneHref} className="flex gap-4 text-gastro-dark-green hover:text-gastro-orange"><Phone className="w-5 h-5" /><span className="font-bold">{contactPhone}</span></a>
+            <a href={`mailto:${emailText}`} className="flex gap-4 text-gastro-dark-green hover:text-gastro-orange"><ShieldCheck className="w-5 h-5" /><span className="font-bold">{emailText}</span></a>
+            <div className="flex gap-4 text-gastro-dark-green"><Clock className="w-5 h-5" /><span className="font-bold whitespace-pre-wrap">{openingHoursText}</span></div>
+            <BoltFoodLink className="inline-flex bg-gastro-orange text-white px-7 py-4 rounded-full font-black hover:bg-gastro-dark-green transition-colors" />
+            <a href={googleReviewsHref} target="_blank" rel="noopener noreferrer" className="block text-sm font-bold text-gastro-ink/55 hover:text-gastro-orange">Google profil a recenzie</a>
+          </div>
+        </div>
+        <div className="lg:col-span-7">
+          <iframe title="Mapa Reštaurácia Jašterka Hlohovec" src="https://www.google.com/maps?q=Re%C5%A1taur%C3%A1cia%20Ja%C5%A1terka%20Hlohovec&output=embed" className="w-full h-80 rounded-[32px] border border-gastro-beige/30" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+        </div>
+      </div>
+    </section>
+  );
+
+  const ContactPage = () => (
+    <>
+      <PageHeader eyebrow="Kontakt" title="Kontakt a mapa" text="Adresa, telefón, email, otváracie hodiny, Bolt Food a navigácia na jednom mieste." />
+      <ContactBlock />
+    </>
+  );
+
+  const renderMainContent = () => {
+    if (currentPath === '/ponuka') return <MenuLandingPage />;
+    if (currentPath === '/ponuka/denne-menu') return <DailyMenuPage />;
+    if (currentPath === '/ponuka/jedalny-listok') return <MenuListPage />;
+    if (currentPath === '/ponuka/pizza') return <PizzaPage />;
+    if (currentPath === '/rezervacia') return <ReservationPage />;
+    if (currentPath === '/eventy') return <EventsPage />;
+    if (currentPath === '/kontakt') return <ContactPage />;
+    return <HomePage />;
   };
 
   return (
@@ -317,31 +805,35 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
             <div className="flex items-center gap-8">
               <div className="text-2xl font-black tracking-tighter text-gastro-dark-green uppercase">
-                {settings.restaurant_name || 'Jašterka'}<span className="text-gastro-orange">.</span>
+                {restaurantName}<span className="text-gastro-orange">.</span>
               </div>
               <div className="hidden md:flex items-center gap-6">
                 {[
-                  { label: 'Denné Menu', id: 'daily' },
-                  { label: 'Ponuka', id: 'menu' },
-                  { label: 'Pizza', action: () => { setActiveCategory('pizza'); scrollToSection('menu'); } },
-                  { label: 'Rezervácie', action: () => setIsReservationOpen(true) },
-                  { label: 'O Nás', id: 'about' }
+                  { label: 'Domov', path: '/' },
+                  { label: 'Ponuka', path: '/ponuka' },
+                  { label: 'Rezervácia stola', path: '/rezervacia' },
+                  { label: 'Eventy / oslavy', path: '/eventy' },
+                  { label: 'Kontakt', path: '/kontakt' },
                 ].map((link) => (
-                  <button 
-                    key={link.label} 
-                    onClick={() => link.id ? scrollToSection(link.id) : link.action?.()}
-                    className="text-sm font-medium text-gastro-ink/70 hover:text-gastro-dark-green transition-colors uppercase tracking-widest"
+                  <button
+                    key={link.label}
+                    onClick={() => navigateTo(link.path)}
+                    className={`text-sm font-medium hover:text-gastro-dark-green transition-colors uppercase tracking-widest ${
+                      currentPath === link.path ? 'text-gastro-dark-green' : 'text-gastro-ink/70'
+                    }`}
                   >
                     {link.label}
                   </button>
                 ))}
+                <BoltFoodLink className="text-sm font-medium text-gastro-ink/70 hover:text-gastro-orange transition-colors uppercase tracking-widest" />
               </div>
             </div>
             
             <div className="flex items-center gap-4">
               <button 
                 onClick={() => setIsLoyaltyOpen(true)}
-                className="hidden md:flex p-2 hover:bg-gastro-beige/20 rounded-full transition-colors relative"
+                className="flex p-2 hover:bg-gastro-beige/20 rounded-full transition-colors relative"
+                aria-label="Otvori? ko??k"
               >
                 <User className="w-5 h-5 text-gastro-dark-green" />
                 {loyaltyData && (
@@ -366,56 +858,49 @@ export default function App() {
                   </motion.span>
                 )}
               </button>
-              <button 
-                onClick={() => setIsReservationOpen(true)}
-                className="bg-gastro-orange text-white px-5 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:scale-105 transition-transform"
+              <a
+                href={phoneHref}
+                className="bg-gastro-orange text-white px-5 py-2 rounded-full text-xs font-bold uppercase tracking-widest hover:bg-gastro-dark-green focus:outline-none focus:ring-4 focus:ring-gastro-orange/30 transition-colors"
               >
-                Rezervácia
-              </button>
+                Zavolať
+              </a>
             </div>
           </div>
         </nav>
 
-        {/* Mobile App Navigation (Bottom Bar) */}
-        <div className="md:hidden fixed bottom-6 left-6 right-6 z-[150] h-16 bg-white/90 backdrop-blur-xl border border-gastro-beige/20 rounded-full shadow-2xl flex items-center justify-around px-4">
-          <button 
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex flex-col items-center gap-1 text-gastro-ink/40 hover:text-gastro-dark-green transition-colors"
+        {/* Mobile bottom bar */}
+        <div className="md:hidden fixed bottom-4 left-4 right-4 z-[150] min-h-16 bg-white/95 backdrop-blur-xl border border-gastro-beige/40 rounded-3xl shadow-2xl grid grid-cols-4 overflow-hidden">
+          <button
+            onClick={() => navigateTo('/')}
+            aria-label="Domov"
+            className="flex flex-col items-center justify-center gap-1 py-3 text-gastro-dark-green hover:bg-gastro-beige/20 focus:outline-none focus:ring-2 focus:ring-gastro-orange"
           >
             <Clock className="w-5 h-5" />
-            <span className="text-[8px] font-bold uppercase tracking-tighter">Domov</span>
+            <span className="text-[10px] font-black uppercase tracking-wide">Domov</span>
           </button>
-          <button 
-            onClick={() => scrollToSection('daily')}
-            className="flex flex-col items-center gap-1 text-gastro-ink/40 hover:text-gastro-dark-green transition-colors"
+          <button
+            onClick={() => navigateTo('/ponuka')}
+            aria-label="Ponuka"
+            className="flex flex-col items-center justify-center gap-1 py-3 bg-gastro-dark-green text-white hover:bg-gastro-orange focus:outline-none focus:ring-2 focus:ring-gastro-orange"
+          >
+            <Menu className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-wide">Ponuka</span>
+          </button>
+          <button
+            onClick={() => navigateTo('/rezervacia')}
+            aria-label="Rezervácia"
+            className="flex flex-col items-center justify-center gap-1 py-3 text-gastro-dark-green hover:bg-gastro-beige/20 focus:outline-none focus:ring-2 focus:ring-gastro-orange"
           >
             <ShieldCheck className="w-5 h-5" />
-            <span className="text-[8px] font-bold uppercase tracking-tighter">Denné</span>
+            <span className="text-[10px] font-black uppercase tracking-wide">Rezervácia</span>
           </button>
-          <button 
-            onClick={() => { setActiveCategory('pizza'); scrollToSection('menu'); }}
-            className="w-12 h-12 bg-gastro-dark-green text-white rounded-full flex items-center justify-center shadow-lg -translate-y-4 border-4 border-gastro-cream"
-          >
-            <Plus className="w-6 h-6 rotate-45" />
-          </button>
-          <button 
+          <button
             onClick={() => setIsCartOpen(true)}
-            className="flex flex-col items-center gap-1 text-gastro-ink/40 hover:text-gastro-dark-green transition-colors relative"
+            aria-label="Otvori? ko??k"
+            className="flex flex-col items-center justify-center gap-1 py-3 text-gastro-dark-green hover:bg-gastro-beige/20 focus:outline-none focus:ring-2 focus:ring-gastro-orange"
           >
             <ShoppingCart className="w-5 h-5" />
-            {getTotalItems() > 0 && (
-              <span className="absolute -top-1 -right-1 bg-gastro-orange text-white text-[8px] font-black w-3 h-3 flex items-center justify-center rounded-full">
-                {getTotalItems()}
-              </span>
-            )}
-            <span className="text-[8px] font-bold uppercase tracking-tighter">Košík</span>
-          </button>
-          <button 
-            onClick={() => setIsLoyaltyOpen(true)}
-            className="flex flex-col items-center gap-1 text-gastro-ink/40 hover:text-gastro-dark-green transition-colors"
-          >
-            <User className="w-5 h-5" />
-            <span className="text-[8px] font-bold uppercase tracking-tighter">Ja</span>
+            <span className="text-[10px] font-black uppercase tracking-wide">Ko??k</span>
           </button>
         </div>
 
@@ -561,6 +1046,13 @@ export default function App() {
 
                       <div className="space-y-4">
                         <input 
+                          type="text" 
+                          name="name"
+                          required
+                          placeholder="Meno a priezvisko" 
+                          className="w-full bg-white border border-gastro-beige rounded-2xl px-6 py-4 focus:ring-2 focus:ring-gastro-dark-green/20 focus:border-gastro-dark-green outline-none transition-all"
+                        />
+                        <input 
                           type="email" 
                           name="email"
                           required
@@ -587,10 +1079,18 @@ export default function App() {
                         />
                       )}
                       <div className="grid grid-cols-2 gap-4">
-                        <select className="bg-white border border-gastro-beige rounded-2xl px-6 py-4 focus:ring-2 focus:ring-gastro-dark-green/20 focus:border-gastro-dark-green outline-none transition-all appearance-none cursor-pointer">
-                          <option>Hlohovec</option>
-                          <option>Leopoldov</option>
-                          <option>Šulekovo</option>
+                        <select
+                          name="city"
+                          value={deliveryCity}
+                          onChange={(e) => setDeliveryCity(e.target.value)}
+                          disabled={deliveryType === 'pickup'}
+                          className="bg-white border border-gastro-beige rounded-2xl px-6 py-4 focus:ring-2 focus:ring-gastro-dark-green/20 focus:border-gastro-dark-green outline-none transition-all appearance-none cursor-pointer disabled:opacity-60"
+                        >
+                          {deliveryZones.map((zone) => (
+                            <option key={zone.city} value={zone.city}>
+                              {zone.city} {deliveryType === 'delivery' ? `(+${zone.fee.toFixed(2)} €)` : ''}
+                            </option>
+                          ))}
                         </select>
                         <select className="bg-white border border-gastro-beige rounded-2xl px-6 py-4 focus:ring-2 focus:ring-gastro-dark-green/20 focus:border-gastro-dark-green outline-none transition-all appearance-none cursor-pointer">
                           <option>Čo najskôr (ASAP)</option>
@@ -694,7 +1194,7 @@ export default function App() {
                         {deliveryType === 'delivery' && (
                           <div className="flex justify-between text-sm text-gastro-ink/60">
                             <span>Doprava</span>
-                            <span>2.00 €</span>
+                            <span>{selectedDeliveryFee.toFixed(2)} €</span>
                           </div>
                         )}
                         <div className="flex justify-between text-xl font-black text-gastro-dark-green pt-4">
@@ -763,15 +1263,20 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {renderMainContent()}
+
+      {false && (<>
       {/* Hero Section */}
-      <section className="relative pt-20 h-[90vh] flex items-center overflow-hidden">
+      <section className="relative pt-28 pb-16 md:pt-32 md:pb-24 min-h-[88vh] flex items-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
-            src="https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?q=80&w=2070&auto=format&fit=crop" 
-            alt="Restaurant Background" 
-            className="w-full h-full object-cover opacity-10"
+            src="https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=2200&auto=format&fit=crop" 
+            alt="Čerstvá pizza a jedlo v reštaurácii Jašterka" 
+            className="w-full h-full object-cover opacity-25"
+            fetchPriority="high"
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-gastro-cream via-transparent to-gastro-cream" />
+          <div className="absolute inset-0 bg-gradient-to-r from-gastro-cream via-gastro-cream/85 to-gastro-cream/35" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-gastro-cream to-transparent" />
         </div>
 
         <div className="max-w-7xl mx-auto px-6 w-full relative z-10">
@@ -780,55 +1285,61 @@ export default function App() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gastro-olive/10 rounded-full text-gastro-olive text-xs font-bold uppercase tracking-widest mb-8"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-white/80 border border-gastro-beige/50 rounded-full text-gastro-dark-green text-xs font-bold uppercase tracking-widest mb-8"
             >
               <Clock className="w-3 h-3" />
-              Sme Otvorení
+              {openingHoursText}
             </motion.div>
             
             <motion.h1 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
-              className="text-7xl md:text-8xl leading-[0.9] mb-8"
+              className="text-5xl sm:text-6xl md:text-8xl font-black leading-[1.05] mb-8 max-w-4xl"
             >
-              {settings.hero_title || 'Chuť tradície v'} <br />
-              <span className="text-gastro-dark-green serif italic">
-                {settings.hero_subtitle ? '' : 'modernom šate.'}
-              </span>
-              {settings.hero_title && <div className="text-gastro-dark-green serif italic">
-                {settings.hero_subtitle && settings.hero_title.includes('modernom šate') ? '' : ''}
-              </div>}
+              Denné menu a pizza v Hlohovci
             </motion.h1>
 
             <motion.p 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-lg text-gastro-ink/60 mb-10 max-w-xl leading-relaxed"
+              className="text-lg md:text-xl text-gastro-ink/70 mb-10 max-w-2xl leading-relaxed"
             >
-              {settings.hero_subtitle || 'Reštaurácia Jašterka v Hlohovci vám prináša poctivú slovenskú kuchyňu, legendárnu pizzu a atmosféru, ktorú si zamilujete.'}
+              Poctivé jedlo, čerstvé suroviny a rýchla objednávka každý deň.
             </motion.p>
 
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="flex flex-col sm:flex-row items-center gap-4"
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4"
             >
-              <button 
-                onClick={() => scrollToSection('menu')}
-                className="w-full sm:w-auto bg-gastro-dark-green text-white px-10 py-5 rounded-full font-bold text-lg text-center shadow-xl shadow-gastro-dark-green/20 hover:scale-105 transition-transform active:scale-95"
+              <a 
+                href={phoneHref}
+                className="w-full sm:w-auto bg-gastro-orange text-white px-10 py-5 rounded-full font-bold text-lg text-center shadow-xl shadow-gastro-orange/20 hover:bg-gastro-dark-green focus:outline-none focus:ring-4 focus:ring-gastro-orange/30 transition-colors active:scale-95"
               >
-                Objednať Jedlo
-              </button>
+                Zavolať a objednať
+              </a>
               <button 
-                onClick={() => setIsReservationOpen(true)}
-                className="w-full sm:w-auto bg-white border border-gastro-beige text-gastro-dark-green px-10 py-5 rounded-full font-bold text-lg hover:bg-gastro-beige/10 transition-colors"
+                onClick={() => scrollToSection('daily')}
+                className="w-full sm:w-auto bg-white border-2 border-gastro-dark-green text-gastro-dark-green px-10 py-5 rounded-full font-bold text-lg hover:bg-gastro-dark-green hover:text-white focus:outline-none focus:ring-4 focus:ring-gastro-dark-green/20 transition-colors"
               >
-                Rezervovať Stôl
+                Pozrieť dnešné menu
               </button>
             </motion.div>
+            <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl">
+              {[
+                ['Denné menu', '11:00 - 14:00'],
+                ['Rozvoz', `od ${selectedDeliveryFee.toFixed(2)} €`],
+                ['Kontakt', contactPhone],
+              ].map(([label, value]) => (
+                <div key={label} className="bg-white/85 border border-gastro-beige/30 rounded-2xl px-5 py-4">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-1">{label}</div>
+                  <div className="font-black text-gastro-dark-green">{value}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -855,12 +1366,31 @@ export default function App() {
           <div className="bg-white rounded-[60px] p-12 md:p-20 border border-gastro-beige/20 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-gastro-beige/5 rounded-full -translate-y-1/2 translate-x-1/2" />
             <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-16">
-              <div className="lg:col-span-8">
+              <div className="lg:col-span-7 space-y-8">
                 <div className="prose prose-lg max-w-none text-gastro-ink whitespace-pre-wrap font-sans leading-relaxed">
                   {dailyMenu.content}
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(dailyMenu.items || []).map((item: DailyMenuItem) => (
+                    <div key={item.id} className="border border-gastro-beige/20 rounded-3xl p-6 bg-gastro-cream/10">
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <h3 className="text-lg font-bold text-gastro-dark-green">{item.name}</h3>
+                        <span className="text-lg font-black text-gastro-dark-green whitespace-nowrap">{Number(item.price).toFixed(2)} €</span>
+                      </div>
+                      {item.description && (
+                        <p className="text-sm text-gastro-ink/60 leading-relaxed mb-5">{item.description}</p>
+                      )}
+                      <button
+                        onClick={() => handleAddDailyMenuToCart(item)}
+                        className="w-full bg-gastro-orange text-white py-3 rounded-full font-bold text-sm hover:scale-[1.02] active:scale-95 transition-transform"
+                      >
+                        Pridať do košíka
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="lg:col-span-4 space-y-8">
+              <div className="lg:col-span-5 space-y-8">
                 <div className="p-8 bg-gastro-cream/10 rounded-[40px] border border-gastro-beige/10">
                   <h4 className="text-xs font-black uppercase tracking-widest text-gastro-dark-green mb-6">Informácie</h4>
                   <div className="space-y-6">
@@ -886,15 +1416,15 @@ export default function App() {
                 </div>
                 
                 <div className="p-8 bg-gastro-dark-green rounded-[40px] text-white">
-                  <h4 className="text-xs font-black uppercase tracking-widest opacity-60 mb-6">Rozvoz menu</h4>
+                  <h4 className="text-xs font-black uppercase tracking-widest opacity-60 mb-6">Objednávka cez web</h4>
                   <p className="text-sm leading-relaxed mb-8 opacity-80">
-                    {settings.delivery_text || 'Chutný obed vám radi dovezieme priamo do firmy alebo k vám domov. Stačí zavolať!'}
+                    Vyberte si denné menu, pridajte ho do košíka a dokončite objednávku priamo online.
                   </p>
                   <button 
-                    onClick={() => scrollToSection('menu')}
+                    onClick={() => setIsCartOpen(true)}
                     className="w-full bg-gastro-orange text-white py-4 rounded-full font-bold text-sm hover:scale-105 transition-transform"
                   >
-                    Pozrieť celú ponuku
+                    Otvoriť košík
                   </button>
                 </div>
               </div>
@@ -905,6 +1435,72 @@ export default function App() {
             Denné menu na dnes ešte nebolo zverejnené. Sledujte nás čoskoro!
           </div>
         )}
+      </section>
+
+      {/* Trust Section */}
+      <section className="py-20 px-6 bg-white" id="trust">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+          <div className="lg:col-span-5">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-gastro-orange/10 rounded-full text-gastro-orange text-[10px] font-black uppercase tracking-widest mb-5">
+              <ShieldCheck className="w-3 h-3" /> Overené hosťami
+            </div>
+            <h2 className="text-4xl md:text-5xl font-black leading-tight mb-6">Jedlo, ktoré si v Hlohovci nájde cestu k ľuďom.</h2>
+            <p className="text-gastro-ink/65 leading-relaxed mb-8 max-w-xl">
+              Denné menu, pizza aj klasické jedlá pripravujeme tak, aby bolo jednoduché vybrať si, objednať a prísť si po dobré jedlo alebo si ho nechať doručiť.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+              <a href={googleReviewsHref} target="_blank" rel="noreferrer" className="border border-gastro-beige/40 rounded-3xl p-5 hover:border-gastro-orange/60 transition-colors">
+                <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-2">Google recenzie</div>
+                <div className="text-xl font-black text-gastro-dark-green">Pozrieť hodnotenia</div>
+              </a>
+              <div className="border border-gastro-beige/40 rounded-3xl p-5">
+                <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-2">Adresa</div>
+                <div className="text-base font-black text-gastro-dark-green">{addressText}</div>
+              </div>
+              <div className="border border-gastro-beige/40 rounded-3xl p-5">
+                <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-2">Otváracie hodiny</div>
+                <div className="text-base font-black text-gastro-dark-green whitespace-pre-wrap">{openingHoursText}</div>
+              </div>
+              <a href={phoneHref} className="border border-gastro-beige/40 rounded-3xl p-5 hover:border-gastro-orange/60 transition-colors">
+                <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-2">Objednávky</div>
+                <div className="text-base font-black text-gastro-dark-green">{contactPhone}</div>
+              </a>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button onClick={() => scrollToSection('menu')} className="bg-gastro-dark-green text-white px-8 py-4 rounded-full font-bold hover:bg-gastro-orange focus:outline-none focus:ring-4 focus:ring-gastro-orange/30 transition-colors">
+                Pozrieť ponuku
+              </button>
+              <a href={mapsHref} target="_blank" rel="noreferrer" className="bg-gastro-cream border border-gastro-beige text-gastro-dark-green px-8 py-4 rounded-full font-bold text-center hover:bg-white focus:outline-none focus:ring-4 focus:ring-gastro-dark-green/20 transition-colors">
+                Navigovať
+              </a>
+            </div>
+          </div>
+          <div className="lg:col-span-7 grid grid-cols-2 gap-4">
+            <img
+              src="https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=900&auto=format&fit=crop"
+              alt="Pizza pripravená z čerstvých surovín"
+              className="w-full h-full min-h-72 object-cover rounded-3xl"
+              loading="lazy"
+              decoding="async"
+            />
+            <div className="grid gap-4">
+              <img
+                src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=900&auto=format&fit=crop"
+                alt="Denné menu a čerstvé jedlo"
+                className="w-full h-40 md:h-56 object-cover rounded-3xl"
+                loading="lazy"
+                decoding="async"
+              />
+              <img
+                src="https://images.unsplash.com/photo-1550966841-3ee7adac1661?q=80&w=900&auto=format&fit=crop"
+                alt="Interiér reštaurácie"
+                className="w-full h-40 md:h-56 object-cover rounded-3xl"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* About Section */}
@@ -920,18 +1516,18 @@ export default function App() {
             </p>
             <div className="grid grid-cols-2 gap-8">
               <div>
-                <div className="text-3xl font-black text-gastro-orange mb-1">15+</div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-40">Rokov skúseností</div>
+                <div className="text-3xl font-black text-gastro-orange mb-1">Menu</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-40">Denná obedová ponuka</div>
               </div>
               <div>
-                <div className="text-3xl font-black text-gastro-orange mb-1">50k+</div>
-                <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-40">Spokojných hostí</div>
+                <div className="text-3xl font-black text-gastro-orange mb-1">Pizza</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-40">Objednávka aj rozvoz</div>
               </div>
             </div>
           </div>
           <div className="relative">
             <div className="aspect-[4/5] rounded-[60px] overflow-hidden">
-               <img src="https://images.unsplash.com/photo-1550966841-3ee7adac1661?q=80&w=2070" className="w-full h-full object-cover" alt="Restaurant Interior" />
+               <img src="https://images.unsplash.com/photo-1550966841-3ee7adac1661?q=80&w=1200&auto=format&fit=crop" className="w-full h-full object-cover" alt="Interiér reštaurácie Jašterka" loading="lazy" decoding="async" />
             </div>
             <div className="absolute -bottom-8 -left-8 bg-white text-gastro-dark-green p-10 rounded-[40px] shadow-2xl hidden md:block">
                <div className="flex flex-col gap-4">
@@ -973,7 +1569,7 @@ export default function App() {
             </div>
             <div>
               <div className="text-xs uppercase tracking-widest opacity-60 font-bold mb-1">Zavolajte nám</div>
-              <div className="font-medium">{settings.contact_phone || '+421 9xx xxx xxx'}</div>
+              <div className="font-medium">{contactPhone}</div>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -999,6 +1595,16 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-2 overflow-x-auto pb-4 md:pb-0 scrollbar-hide">
+            <button 
+              onClick={() => setActiveCategory('all')}
+              className={`whitespace-nowrap px-6 py-3 rounded-full text-sm font-bold transition-all ${
+                activeCategory === 'all'
+                ? 'bg-gastro-dark-green text-white shadow-lg shadow-gastro-dark-green/20' 
+                : 'bg-white border border-gastro-beige text-gastro-ink/60 hover:border-gastro-dark-green/30'
+              }`}
+            >
+              Všetko
+            </button>
             {categories.map((cat) => (
               <button 
                 key={cat.id}
@@ -1058,6 +1664,8 @@ export default function App() {
                     src={item.image || 'https://images.unsplash.com/photo-1513104890138-7c749659a591?q=80&w=2070'} 
                     alt={item.name} 
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                    loading="lazy"
+                    decoding="async"
                   />
                   {item.tag && (
                     <div className="absolute top-6 left-6 px-4 py-1.5 bg-gastro-orange text-white text-[10px] font-bold uppercase tracking-widest rounded-full shadow-lg">
@@ -1075,18 +1683,27 @@ export default function App() {
                 </div>
                 
                 <div className="p-8">
+                  {activeCategory === 'all' && item.category && (
+                    <div className="text-[9px] font-black text-gastro-orange uppercase tracking-[0.2em] mb-3">
+                      {item.category.name}
+                    </div>
+                  )}
                   <div className="flex items-start justify-between mb-2">
                     <h3 className="text-xl font-bold">{item.name}</h3>
                     <span className="text-lg font-black text-gastro-dark-green whitespace-nowrap ml-4">{Number(item.price).toFixed(2)} €</span>
                   </div>
-                  <p className="text-sm text-gastro-ink/50 leading-relaxed mb-4">
+                  <p className="text-sm text-gastro-ink/60 leading-relaxed mb-4">
                     {item.description}
                   </p>
-                  {item.allergens && (
-                    <div className="text-[9px] font-bold text-gastro-ink/30 uppercase tracking-[0.2em]">
-                      Alergény: {item.allergens}
-                    </div>
-                  )}
+                  <div className="text-[10px] font-bold text-gastro-ink/40 uppercase tracking-[0.16em] mb-5">
+                    {getMenuMeta(item)}
+                  </div>
+                  <button
+                    onClick={() => handleAddToCart(item)}
+                    className="w-full bg-gastro-dark-green text-white py-3 rounded-full font-bold text-sm hover:bg-gastro-orange focus:outline-none focus:ring-4 focus:ring-gastro-orange/30 active:scale-95 transition-colors"
+                  >
+                    Pridať do košíka
+                  </button>
                 </div>
               </motion.div>
             ))}
@@ -1095,13 +1712,15 @@ export default function App() {
 
         <div className="mt-20 text-center">
           <button 
-            onClick={() => scrollToSection('menu')}
+            onClick={() => showCategory('all')}
             className="bg-white border-2 border-gastro-dark-green text-gastro-dark-green px-12 py-5 rounded-full font-bold text-lg hover:bg-gastro-dark-green hover:text-white transition-all"
           >
             Zobraziť Celú Ponuku
           </button>
         </div>
       </section>
+
+      </>)}
 
       {/* Reservation Modal */}
       <AnimatePresence>
@@ -1291,21 +1910,77 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-gastro-beige/20 py-16 px-6">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="text-2xl font-black tracking-tighter text-gastro-dark-green uppercase">
-            {settings.restaurant_name || 'Jašterka'}<span className="text-gastro-orange">.</span>
+      {/* FAQ */}
+      <section className="py-20 px-6 bg-gastro-cream">
+        <div className="max-w-5xl mx-auto">
+          <div className="mb-10">
+            <div className="text-[10px] font-black uppercase tracking-widest text-gastro-orange mb-3">FAQ</div>
+            <h2 className="text-4xl md:text-5xl font-black leading-tight">Najčastejšie otázky</h2>
           </div>
-          <p className="text-sm text-gastro-ink/40">
-            © 2026 {settings.restaurant_name || 'Jašterka'} Hlohovec. Všetky práva vyhradené.
-          </p>
-          <button 
-            onClick={() => setView('admin')}
-            className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gastro-ink/20 hover:text-gastro-dark-green transition-colors"
-          >
-            <ShieldCheck className="w-3 h-3" /> Admin Prístup
-          </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              ['Dá sa objednať cez web?', 'Áno. Vyberte položky z ponuky alebo denného menu, pridajte ich do košíka a dokončite objednávku.'],
+              ['Ako sa ráta cena rozvozu?', 'Pri rozvoze si vyberiete obec a cena doručenia sa doplní automaticky podľa cenníka.'],
+              ['Kedy je dostupné denné menu?', `Denné menu vydávame spravidla v čase ${settings.menu_hours || '11:00 - 14:00'}.`],
+              ['Dá sa objednať osobný odber?', 'Áno. V košíku zvoľte osobný odber a doplňte meno a telefón pre jednoduchú identifikáciu objednávky.'],
+            ].map(([question, answer]) => (
+              <div key={question} className="bg-white border border-gastro-beige/30 rounded-3xl p-6">
+                <h3 className="font-black text-lg mb-3 text-gastro-dark-green">{question}</h3>
+                <p className="text-sm leading-relaxed text-gastro-ink/60">{answer}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gastro-beige/20 py-16 px-6 pb-28 md:pb-16">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
+          <div className="lg:col-span-4">
+            <div className="text-3xl font-black tracking-tighter text-gastro-dark-green uppercase mb-4">
+              {restaurantName}<span className="text-gastro-orange">.</span>
+            </div>
+            <p className="text-sm text-gastro-ink/60 leading-relaxed max-w-sm mb-6">
+              Denné menu, pizza a poctivé jedlá v Hlohovci. Objednajte si cez web, zavolajte alebo sa nechajte navigovať priamo k nám.
+            </p>
+            <button 
+              onClick={() => setView('admin')}
+              className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-gastro-ink/25 hover:text-gastro-dark-green focus:outline-none focus:ring-2 focus:ring-gastro-orange transition-colors"
+            >
+              <ShieldCheck className="w-3 h-3" /> Admin prístup
+            </button>
+          </div>
+          <div className="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-6 text-sm">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-3">Kontakt</div>
+              <a className="block font-bold text-gastro-dark-green hover:text-gastro-orange mb-2" href={phoneHref}>{contactPhone}</a>
+              <a className="block text-gastro-ink/60 hover:text-gastro-orange" href={`mailto:${emailText}`}>{emailText}</a>
+            </div>
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-3">Adresa</div>
+              <a className="block font-bold text-gastro-dark-green hover:text-gastro-orange" href={mapsHref} target="_blank" rel="noreferrer">{addressText}</a>
+            </div>
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-3">Otváracie hodiny</div>
+              <div className="font-bold text-gastro-dark-green whitespace-pre-wrap">{openingHoursText}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-gastro-ink/40 mb-3">Sociálne siete</div>
+              <a className="block text-gastro-ink/60 hover:text-gastro-orange" href={googleReviewsHref} target="_blank" rel="noreferrer">Google profil</a>
+            </div>
+          </div>
+          <div className="lg:col-span-4">
+            <iframe
+              title="Mapa Reštaurácia Jašterka Hlohovec"
+              src="https://www.google.com/maps?q=Re%C5%A1taur%C3%A1cia%20Ja%C5%A1terka%20Hlohovec&output=embed"
+              className="w-full h-56 rounded-3xl border border-gastro-beige/30"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto mt-10 pt-6 border-t border-gastro-beige/20 text-xs text-gastro-ink/40">
+          © 2026 {restaurantName} Hlohovec. Všetky práva vyhradené.
         </div>
       </footer>
         </div>

@@ -113,7 +113,7 @@ export default function AdminLogin({ onLogin, onBack }: { onLogin: (pass: string
 
       {/* Footer Info */}
       <div className="absolute bottom-8 left-0 right-0 text-center opacity-20">
-        <p className="text-[10px] font-black uppercase tracking-[0.3em]">Jasterka Admin v-1.5.0</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.3em]">Jašterka Admin</p>
       </div>
     </div>
   );

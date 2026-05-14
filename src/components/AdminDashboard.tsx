@@ -21,7 +21,8 @@ import {
   Navigation,
   Calendar,
   Settings2,
-  UtensilsCrossed
+  UtensilsCrossed,
+  Upload
 } from 'lucide-react';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import React from 'react';
@@ -46,11 +47,16 @@ interface Order {
   total: string | number;
   createdAt: string;
   deliveryAddress: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  deliveryCity?: string | null;
+  deliveryFee?: string | number;
   items: {
     quantity: number;
+    itemName?: string | null;
     menuItem: {
       name: string;
-    }
+    } | null;
   }[];
 }
 
@@ -66,6 +72,50 @@ function MenuItemModal({ categories, item, onClose, onSuccess }: { categories: a
     allergens: item?.allergens || ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [imageError, setImageError] = useState('');
+
+  const resizeImage = (file: File) => new Promise<string>((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('Vyberte obrázok vo formáte JPG, PNG alebo WebP.'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        const maxSize = 1200;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const width = Math.round(image.width * scale);
+        const height = Math.round(image.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        if (!context) {
+          reject(new Error('Obrázok sa nepodarilo spracovať.'));
+          return;
+        }
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      image.onerror = () => reject(new Error('Obrázok sa nepodarilo načítať.'));
+      image.src = String(reader.result);
+    };
+    reader.onerror = () => reject(new Error('Súbor sa nepodarilo načítať.'));
+    reader.readAsDataURL(file);
+  });
+
+  const handleImageUpload = async (file?: File) => {
+    if (!file) return;
+    setImageError('');
+    try {
+      const image = await resizeImage(file);
+      setFormData((current) => ({ ...current, image }));
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : 'Obrázok sa nepodarilo nahrať.');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +229,24 @@ function MenuItemModal({ categories, item, onClose, onSuccess }: { categories: a
               onChange={e => setFormData({...formData, image: e.target.value})}
               className="w-full bg-gastro-cream/10 border border-gastro-beige rounded-2xl px-5 py-3 outline-none focus:border-gastro-dark-green transition-colors text-sm font-bold"
             />
+            {formData.image && (
+              <div className="h-40 rounded-2xl overflow-hidden border border-gastro-beige bg-gastro-cream/10">
+                <img src={formData.image} alt="Náhľad jedla" className="w-full h-full object-cover" />
+              </div>
+            )}
+            <label className="bg-gastro-dark-green text-white px-5 py-3 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 cursor-pointer hover:scale-[1.02] transition-transform">
+              <Upload className="w-4 h-4" />
+              Nahrať obrázok z PC
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(event) => handleImageUpload(event.target.files?.[0])}
+              />
+            </label>
+            {imageError && (
+              <div className="text-[10px] font-bold text-red-500 uppercase tracking-widest ml-4">{imageError}</div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -533,7 +601,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
     const itemsHtml = order.items.map(i => `
       <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #ccc; padding: 4px 0;">
-        <span>${i.quantity}x ${i.menuItem.name}</span>
+        <span>${i.quantity}x ${i.menuItem?.name || i.itemName || 'Položka'}</span>
       </div>
     `).join('');
 
@@ -555,6 +623,9 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
             ID: #${order.id.toUpperCase()}<br>
             C̆as: ${new Date(order.createdAt).toLocaleString('sk-SK')}<br>
             Typ: ${order.type}<br>
+            Meno: ${order.customerName || '-'}<br>
+            Telefón: ${order.customerPhone || '-'}<br>
+            Obec: ${order.deliveryCity || '-'}<br>
             Adresa: ${order.deliveryAddress || 'Osobný Odber'}
           </div>
           <div class="items">${itemsHtml}</div>
@@ -755,6 +826,8 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                               <tr key={order.id} className="border-b border-gastro-beige/10 hover:bg-gastro-cream/5 transition-colors">
                                 <td className="px-6 py-5 font-bold text-xs">#{order.id.slice(-4).toUpperCase()}</td>
                                 <td className="px-6 py-5">
+                                  <div className="font-bold text-sm">{order.customerName || 'Bez mena'}</div>
+                                  <div className="text-[10px] text-gastro-ink/40">{order.customerPhone || ''}</div>
                                   <div className="font-bold text-sm">{order.deliveryAddress || 'Osobný Odber'}</div>
                                 </td>
                                 <td className="px-6 py-5">
@@ -765,7 +838,7 @@ export default function AdminDashboard({ onLogout }: { onLogout: () => void }) {
                                 <td className="px-6 py-5 text-sm font-bold text-gastro-ink/40">{formatTime(order.createdAt)}</td>
                                 <td className="px-6 py-5">
                                   <div className="text-xs text-gastro-ink/60 truncate max-w-[200px]">
-                                    {order.items.map(i => `${i.quantity}x ${i.menuItem.name}`).join(', ')}
+                                    {order.items.map(i => `${i.quantity}x ${i.menuItem?.name || i.itemName || 'Položka'}`).join(', ')}
                                   </div>
                                 </td>
                                 <td className="px-6 py-5">

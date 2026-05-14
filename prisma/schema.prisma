@@ -114,6 +114,9 @@ model Order {
   type            OrderType
   total           Decimal       @db.Decimal(10, 2)
   deliveryFee     Decimal       @db.Decimal(10, 2) @default(0)
+  customerName    String?
+  customerPhone   String?
+  deliveryCity    String?
   deliveryAddress String?
   deliveryZoneId  String?
   deliveryZone    DeliveryZone? @relation(fields: [deliveryZoneId], references: [id])
@@ -129,8 +132,9 @@ model OrderItem {
   id         String   @id @default(cuid())
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id])
-  menuItemId String
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  menuItemId String?
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id])
+  itemName   String?
   quantity   Int
   price      Decimal  @db.Decimal(10, 2)
   note       String?
@@ -212,5 +216,17 @@ model DailyMenu {
   id        String   @id @default(cuid())
   date      DateTime @unique
   content   String   // Markdown or JSON representation of the daily menu
+  items     DailyMenuItem[]
   createdAt DateTime @default(now())
+}
+
+model DailyMenuItem {
+  id          String    @id @default(cuid())
+  dailyMenuId String
+  dailyMenu   DailyMenu @relation(fields: [dailyMenuId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Decimal   @db.Decimal(10, 2)
+  order       Int       @default(0)
+  isActive    Boolean   @default(true)
 }
